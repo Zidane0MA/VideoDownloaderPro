@@ -1,0 +1,43 @@
+{
+  "app": {
+    "name": "Video Downloader Pro",
+    "tagline": "Your personal content collection"
+  },
+  "nav": {
+    "downloads": "Downloads",
+    "wall": "Wall",
+    "settings": "Settings"
+  },
+  "actions": {
+    "download": "Download",
+    "pause": "Pause",
+    "resume": "Resume",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "delete": "Delete",
+    "restore": "Restore",
+    "save": "Save",
+    "close": "Close"
+  },
+  "status": {
+    "queued": "Queued",
+    "fetching_meta": "Fetching info...",
+    "ready": "Ready",
+    "downloading": "Downloading",
+    "paused": "Paused",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  },
+  "settings": {
+    "title": "Settings",
+    "download_path": "Download Path",
+    "concurrent_downloads": "Concurrent Downloads",
+    "language": "Language",
+    "accounts": "Accounts",
+    "about": "About"
+  },
+  "placeholder": {
+    "paste_url": "Paste a URL to download..."
+  }
+}
