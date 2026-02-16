@@ -1,0 +1,419 @@
+# IPC API Contract (Frontend ↔ Backend)
+
+## Overview
+All communication between the React frontend and the Tauri Rust backend is done via `invoke()` (request/response) and Tauri events (server-push). This document defines the complete API surface.
+
+---
+
+## 1. Commands (`invoke()`)
+
+### Download Operations
+
+#### `create_download_task`
+Creates a new download task in the queue.
+
+```typescript
+// Frontend
+const taskId = await invoke<string>('create_download_task', {
+  url: string,
+  formatSelection?: string,  // yt-dlp format ID, default: 'best'
+});
+```
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `url` | string | ✅ | URL to download |
+| `formatSelection` | string | ❌ | yt-dlp format string (e.g., `bestvideo+bestaudio/best`) |
+
+**Returns:** `string` — UUID of the created task.
+**Errors:** `INVALID_URL`, `DUPLICATE_URL` (if post with same URL already exists).
+
+---
+
+#### `get_download_tasks`
+Fetches all download tasks with optional filtering.
+
+```typescript
+const tasks = await invoke<DownloadTask[]>('get_download_tasks', {
+  status?: string[],    // Filter by status(es)
+  limit?: number,       // Default: 50
+  offset?: number,      // Default: 0
+});
+```
+
+**Returns:** `DownloadTask[]`
+
+```typescript
+interface DownloadTask {
+  id: string;
+  url: string;
+  postId: string | null;
+  status: 'QUEUED' | 'FETCHING_META' | 'READY' | 'DOWNLOADING' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  priority: number;
+  progress: number;       // 0.0 to 1.0
+  speed: string | null;   // "2.5 MiB/s"
+  eta: string | null;     // "00:05:23"
+  errorMessage: string | null;
+  retries: number;
+  formatSelection: string | null;
+  createdAt: string;      // ISO 8601
+  startedAt: string | null;
+  completedAt: string | null;
+  // Enriched from metadata (if available)
+  title: string | null;
+  creatorName: string | null;
+  thumbnailUrl: string | null;
+}
+```
+
+---
+
+#### `pause_download`
+Pauses an active download.
+
+```typescript
+await invoke('pause_download', { taskId: string });
+```
+
+**Errors:** `TASK_NOT_FOUND`, `INVALID_STATE` (if not DOWNLOADING).
+
+---
+
+#### `resume_download`
+Resumes a paused download.
+
+```typescript
+await invoke('resume_download', { taskId: string });
+```
+
+**Errors:** `TASK_NOT_FOUND`, `INVALID_STATE` (if not PAUSED).
+
+---
+
+#### `cancel_download`
+Cancels a download and cleans up partial files.
+
+```typescript
+await invoke('cancel_download', { taskId: string });
+```
+
+**Errors:** `TASK_NOT_FOUND`, `INVALID_STATE` (if already COMPLETED/CANCELLED).
+
+---
+
+#### `retry_download`
+Retries a failed download.
+
+```typescript
+await invoke('retry_download', { taskId: string });
+```
+
+**Errors:** `TASK_NOT_FOUND`, `INVALID_STATE` (if not FAILED).
+
+---
+
+#### `remove_download_task`
+Removes a download task from the list (COMPLETED, FAILED, or CANCELLED only).
+
+```typescript
+await invoke('remove_download_task', { taskId: string });
+```
+
+---
+
+### Post Operations
+
+#### `get_posts`
+Fetches posts for the Wall view with pagination and filtering.
+
+```typescript
+const result = await invoke<PostsPage>('get_posts', {
+  page?: number,          // Default: 1
+  limit?: number,         // Default: 50
+  creatorId?: string,
+  platformId?: string,
+  search?: string,        // Search in title/description
+  includeDeleted?: boolean, // Default: false (for trash view)
+});
+```
+
+**Returns:**
+
+```typescript
+interface PostsPage {
+  posts: Post[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+interface Post {
+  id: string;
+  creatorId: string;
+  creatorName: string;
+  creatorAvatar: string | null;
+  sourceId: string | null;
+  title: string | null;
+  description: string | null;
+  originalUrl: string;
+  status: 'PENDING' | 'COMPLETED' | 'FAILED';
+  postedAt: string | null;
+  downloadedAt: string | null;
+  deletedAt: string | null;
+  media: Media[];
+}
+
+interface Media {
+  id: string;
+  type: 'VIDEO' | 'IMAGE' | 'AUDIO';
+  filePath: string;          // Use convertFileSrc() for display
+  thumbnailPath: string | null;
+  thumbnailSmPath: string | null;
+  orderIndex: number;
+  width: number | null;
+  height: number | null;
+  duration: number | null;    // seconds
+  fileSize: number | null;    // bytes
+}
+```
+
+---
+
+#### `get_post`
+Fetches a single post with all media.
+
+```typescript
+const post = await invoke<Post>('get_post', { postId: string });
+```
+
+---
+
+#### `delete_post`
+Soft-deletes a post (moves to trash).
+
+```typescript
+await invoke('delete_post', { postId: string });
+```
+
+---
+
+#### `restore_post`
+Restores a soft-deleted post from trash.
+
+```typescript
+await invoke('restore_post', { postId: string });
+```
+
+---
+
+#### `permanently_delete_post`
+Hard-deletes a post and optionally removes files from disk.
+
+```typescript
+await invoke('permanently_delete_post', { postId: string });
+```
+
+---
+
+#### `empty_trash`
+Permanently deletes all posts in trash.
+
+```typescript
+const deletedCount = await invoke<number>('empty_trash');
+```
+
+---
+
+### Creator Operations
+
+#### `get_creators`
+Fetches all known creators.
+
+```typescript
+const creators = await invoke<Creator[]>('get_creators', {
+  platformId?: string,
+});
+```
+
+```typescript
+interface Creator {
+  id: string;
+  platformId: string;
+  name: string;
+  handle: string | null;
+  url: string;
+  avatarPath: string | null;
+  postCount: number;        // Computed
+}
+```
+
+---
+
+### Settings Operations
+
+#### `get_settings`
+Fetches all settings as a key-value map.
+
+```typescript
+const settings = await invoke<Record<string, string>>('get_settings');
+```
+
+---
+
+#### `update_setting`
+Updates a single setting.
+
+```typescript
+await invoke('update_setting', { key: string, value: string });
+```
+
+---
+
+#### `get_disk_usage`
+Returns disk space information.
+
+```typescript
+const usage = await invoke<DiskUsage>('get_disk_usage');
+```
+
+```typescript
+interface DiskUsage {
+  downloadPathTotal: number;    // bytes
+  downloadPathUsed: number;     // bytes
+  downloadPathAvailable: number; // bytes
+  appDataSize: number;          // bytes (database + logs + trash)
+  trashSize: number;            // bytes
+}
+```
+
+---
+
+### Sidecar Operations
+
+#### `get_ytdlp_version`
+Returns the current yt-dlp version.
+
+```typescript
+const version = await invoke<string>('get_ytdlp_version');
+// Returns: "2025.01.15" or similar
+```
+
+---
+
+#### `update_ytdlp`
+Triggers a yt-dlp self-update.
+
+```typescript
+const result = await invoke<UpdateResult>('update_ytdlp');
+```
+
+```typescript
+interface UpdateResult {
+  success: boolean;
+  oldVersion: string;
+  newVersion: string | null;  // null if already up to date
+  message: string;
+}
+```
+
+---
+
+## 2. Events (Backend → Frontend)
+
+Events are emitted by the Rust backend and listened to by the React frontend via `listen()`.
+
+### `download-progress`
+Emitted during active downloads (~every 500ms).
+
+```typescript
+interface DownloadProgressPayload {
+  taskId: string;
+  progress: number;  // 0.0 to 1.0
+  speed: string;     // "2.5 MiB/s"
+  eta: string;       // "00:05:23"
+  downloadedBytes: number;
+  totalBytes: number | null;
+}
+```
+
+---
+
+### `download-status-changed`
+Emitted on every state transition.
+
+```typescript
+interface DownloadStatusPayload {
+  taskId: string;
+  oldStatus: string;
+  newStatus: string;
+  errorMessage: string | null;
+  errorCode: string | null;     // Error code from 06_error_handling.md
+}
+```
+
+---
+
+### `queue-summary`
+Emitted when the queue composition changes.
+
+```typescript
+interface QueueSummaryPayload {
+  activeCount: number;
+  queuedCount: number;
+  pausedCount: number;
+  completedCount: number;
+  failedCount: number;
+}
+```
+
+---
+
+### `disk-space-warning`
+Emitted when available disk space falls below threshold.
+
+```typescript
+interface DiskSpaceWarningPayload {
+  availableGb: number;
+  thresholdGb: number;
+}
+```
+
+---
+
+### `ytdlp-update-available`
+Emitted when auto-update check finds a new version.
+
+```typescript
+interface YtdlpUpdatePayload {
+  currentVersion: string;
+  latestVersion: string;
+}
+```
+
+---
+
+## 3. Error Response Format
+
+All `invoke()` errors follow this structure:
+
+```typescript
+interface TauriError {
+  code: string;       // Machine-readable code (e.g., "TASK_NOT_FOUND")
+  message: string;    // Human-readable message (localized)
+  details?: any;      // Additional context
+}
+```
+
+Common error codes:
+
+| Code | Description |
+|---|---|
+| `TASK_NOT_FOUND` | Download task with given ID doesn't exist |
+| `POST_NOT_FOUND` | Post with given ID doesn't exist |
+| `INVALID_STATE` | Operation not valid for current state |
+| `INVALID_URL` | URL is not recognized by yt-dlp |
+| `DUPLICATE_URL` | Post with this URL already exists |
+| `DISK_FULL` | Not enough disk space |
+| `SIDECAR_NOT_FOUND` | yt-dlp or ffmpeg binary not found |
+| `DB_ERROR` | Database operation failed |
+| `SETTING_NOT_FOUND` | Unknown setting key |
