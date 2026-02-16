@@ -5,12 +5,9 @@ Phase 2 is complete. Database layer is set up with SQLite + Sea-ORM. Moving to P
 
 ## Recent Changes
 *   [x] **Phase 2 Complete:** SQLite database with Sea-ORM, 8 tables, migrations, entities, and Tauri managed state.
-*   [x] **Migration:** Initial schema with platforms, creators, sources, posts, media, download_tasks, settings, platform_sessions.
-*   [x] **Seed Data:** 4 platforms (YouTube, TikTok, Instagram, X) + 14 default settings.
-*   [x] **Integration Test:** Verified tables, indexes, and seed data.
+*   [x] **Sidecar Manager (Phase 3.1):** `sidecar/` module with `get_version()`, `update_yt_dlp()`, `check_all()`. Three IPC commands: `get_sidecar_status`, `get_sidecar_version`, `update_sidecar`. 4 unit tests for version parsing.
 
 ## Next Steps
-1.  **Sidecar Manager:** Build update/copy logic for yt-dlp and ffmpeg.
-2.  **Metadata Fetcher:** Parse yt-dlp JSON output into Post/Creator/Media entities.
-3.  **Download Worker:** Execute yt-dlp downloads with progress tracking.
-4.  **Queue System:** Background worker pool with concurrency management.
+1.  **Metadata Fetcher:** Parse yt-dlp JSON output into Post/Creator/Media entities.
+2.  **Download Worker:** Execute yt-dlp downloads with progress tracking.
+3.  **Queue System:** Background worker pool with concurrency management.

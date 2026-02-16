@@ -14,7 +14,7 @@
 - [x] Basic Tests
 
 ### Phase 3: Download Engine (Rust)
-- [ ] Sidecar Manager (Update/Copy)
+- [x] Sidecar Manager (Update/Copy)
 - [ ] Metadata Fetcher
 - [ ] Download Worker
 - [ ] Queue System

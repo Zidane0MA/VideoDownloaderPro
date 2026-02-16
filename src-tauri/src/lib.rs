@@ -2,6 +2,7 @@ mod commands;
 pub mod db;
 mod entity;
 mod migration;
+pub mod sidecar;
 
 use sea_orm::DatabaseConnection;
 use tauri::Manager;
@@ -51,7 +52,12 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            commands::sidecar::get_sidecar_status,
+            commands::sidecar::get_sidecar_version,
+            commands::sidecar::update_sidecar,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
