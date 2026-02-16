@@ -19,6 +19,14 @@ graph TD
 *   **Events:** `emit()` is used for high-frequency updates (download progress, log streams) to avoid request/response overhead.
 *   **Typed Contract:** All IPC payloads are strictly typed in TypeScript and Rust (see `07_ipc_api_contract.md`).
 
+### 6. Git Strategy regarding Sidecars
+*   **Binaries Ignored:** `yt-dlp.exe` and `ffmpeg.exe` are added to `.gitignore` to keep the repo light (~100MB saved).
+*   **Download Script:** A PowerShell script (`scripts/download-sidecars.ps1`) is provided to fetch the correct versions for the dev environment.
+
+### 7. Frontend Styling
+*   **TailwindCSS v3:** Chosen over v4 for ecosystem stability and better tooling support (IntelliSense).
+*   **Design System:** Dark-mode first, using a custom color palette in `tailwind.config.js`.
+
 ### 2. Data Persistence
 *   **SQLite + Sea-ORM:** Single source of truth for metadata, queue state, and settings.
 *   **File System:** Media files are stored in a user-accessible directory (user owns the data). Thumbnails and JSON metadata are stored in `app_data` to keep the user folder clean.

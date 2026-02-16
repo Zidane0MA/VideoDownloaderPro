@@ -5,7 +5,7 @@
 ### Frontend
 *   **Framework:** React 18 (Vite)
 *   **Language:** TypeScript
-*   **Styling:** TailwindCSS
+*   **Styling:** TailwindCSS v3 (Stable)
 *   **State:** Zustand (global UI state), TanStack Query (server state/IPC)
 *   **Virtualization:** @tanstack/react-virtual (for the "Wall")
 *   **I18n:** react-i18next

@@ -1,16 +1,16 @@
 # Active Context
 
-## Current Focus
-**Initialization Phase**
-We are currently setting up the project structure and "Memory Bank" to ensure a solid foundation for development.
+**Phase 2: Database & Core Models**
+We have successfully initialized the project (Phase 1). Now we are moving to Phase 2: setting up the SQLite database and Sea-ORM entities.
 
 ## Recent Changes
-*   [x] Analyzed existing documentation (`documentation/` folder).
-*   [x] Created `implementation_plan.md` for Memory Bank setup.
-*   [x] Established `memory-bank/` directory structure.
+*   [x] **Phase 1 Complete:** Initialized Tauri v2 + React + TypeScript project.
+*   [x] **Dependencies:** Installed TailwindCSS v3, Zustand, TanStack Query, i18n, Lucide (frontend) and Tokio, Tracing, Shell (backend).
+*   [x] **Sidecars:** Downloaded `yt-dlp` and `ffmpeg`, configured `tauri.conf.json` permissions and created download script.
+*   [x] **Structure:** Created source folder structure for frontend features and backend commands.
 
 ## Next Steps
-1.  Create `activeContext.md` (This file).
-2.  Initialize the actual Tauri v2 project structure (`npm create tauri-app`).
-3.  Set up the Git repository.
-4.  Begin "Phase 1" of development: Dependencies and Sidecar setup.
+1.  **Database Setup:** Add `sea-orm` and `sea-orm-migration` dependencies.
+2.  **Schema Definition:** Create the initial SQL migration for `posts`, `creators`, `settings`, etc.
+3.  **Entity Generation:** Generate Rust entities from the schema.
+4.  **Database Connection:** Initialize the SQLite connection in `main.rs`/`lib.rs`.

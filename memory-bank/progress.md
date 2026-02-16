@@ -2,11 +2,11 @@
 
 ## Roadmap Overview
 
-### Phase 1: Setup & Core Structure (Current)
-- [ ] Initialize Tauri v2 Project
-- [ ] Setup Frontend Dependencies (Tailwind, Zustand, Query)
-- [ ] Setup Backend Dependencies (Sea-ORM, Tracing)
-- [ ] Configure Sidecars (yt-dlp, ffmpeg)
+### Phase 1: Setup & Core Structure (Completed)
+- [x] Initialize Tauri v2 Project
+- [x] Setup Frontend Dependencies (Tailwind v3, Zustand, Query, i18n)
+- [x] Setup Backend Dependencies (Tracing, Tokio, Shell)
+- [x] Configure Sidecars (yt-dlp, ffmpeg, permissions)
 
 ### Phase 2: Database & Core Models
 - [ ] Schema Migration
