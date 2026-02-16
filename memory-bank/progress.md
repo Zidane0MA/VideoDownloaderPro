@@ -8,10 +8,10 @@
 - [x] Setup Backend Dependencies (Tracing, Tokio, Shell)
 - [x] Configure Sidecars (yt-dlp, ffmpeg, permissions)
 
-### Phase 2: Database & Core Models
-- [ ] Schema Migration
-- [ ] Sea-ORM Entities
-- [ ] Basic Tests
+### Phase 2: Database & Core Models (Completed)
+- [x] Schema Migration
+- [x] Sea-ORM Entities
+- [x] Basic Tests
 
 ### Phase 3: Download Engine (Rust)
 - [ ] Sidecar Manager (Update/Copy)
