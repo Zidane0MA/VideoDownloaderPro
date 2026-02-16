@@ -15,6 +15,7 @@
 ```mermaid
 graph TD
     UI[React Frontend] <-->|IPC Commands / Events| Tauri[Tauri Backend - Rust]
+    UI -->|Opens| WV[WebView Login Window]
     
     subgraph "Rust Core"
         Tauri -->|Spawns| YTDLP[yt-dlp.exe Sidecar]
@@ -22,6 +23,7 @@ graph TD
         Tauri <-->|Sea-ORM| DB[(SQLite Database)]
         Tauri -->|File System| FS[Local Disk]
         Tauri -->|tracing| LOG[Log Files]
+        Tauri -->|CookieManager| CM[Encrypted Cookie Storage]
     end
 
     subgraph "AI Layer - Future TagFlowPro"
@@ -29,9 +31,11 @@ graph TD
         AI --> LLM[LLM / Embeddings]
     end
 
+    WV -->|Webview::cookies_for_url| Tauri
+    CM -->|Generates temp cookies.txt| YTDLP
     YTDLP -->|Streams stdout| Tauri
     FFMPEG -->|Thumbnail resize| Tauri
-    Tauri -->|Events: progress, errors| UI
+    Tauri -->|Events: progress, errors, auth| UI
 ```
 
 ## 3. Communication Flow
@@ -64,39 +68,98 @@ graph TD
 4.  **Frontend:** Renders virtualized Masonry Grid. Thumbnails served via `convertFileSrc`.
 
 ### Cookie / Auth Flow
-1.  **Default:** No auth flags sent to `yt-dlp`.
-2.  **On restricted content error:** Rust retries with `--cookies-from-browser {configured_browser}`.
-3.  **On browser DB locked error:** UI prompts user to export `cookies.txt` manually.
-4.  **Settings:** User can set default browser and always-use-cookies preference.
+
+```mermaid
+flowchart TD
+    A["yt-dlp attempts download"] -->|No auth| B{Success?}
+    B -->|Yes| C[Download proceeds]
+    B -->|"Error: Login/Age-restricted"| D{Stored cookies exist?}
+    D -->|Yes| E["Retry with --cookies temp_file"]
+    E --> F{Success?}
+    F -->|Yes| C
+    F -->|"No: cookies expired"| G[Emit auth-required event]
+    D -->|No| G
+    G --> H[UI shows login modal]
+    H -->|User clicks Login| I[Open WebView window]
+    H -->|User selects Browser| J["yt-dlp --cookies-from-browser"]
+    H -->|User imports file| K["yt-dlp --cookies imported.txt"]
+    I --> L[User logs in via WebView]
+    L --> M["Webview::cookies_for_url captures cookies"]
+    M --> N[Encrypt and store in platform_sessions]
+    N --> O[Retry download with new cookies]
+```
+
+1.  **L0 — Default:** No auth flags sent to `yt-dlp`.
+2.  **On restricted content error:** CookieManager checks `platform_sessions` for stored cookies.
+3.  **If cookies exist:** Generates temp `cookies.txt`, retries with `--cookies temp_file.txt`. Temp file deleted after use.
+4.  **If cookies expired/missing:** Emits `auth-required` event. Frontend shows login modal.
+5.  **WebView Login (L1):** Opens a secondary WebView window with the platform login page. After login, captures cookies via `Webview::cookies_for_url()`, encrypts, and stores in `platform_sessions`.
+6.  **Browser Extraction (L2):** Fallback — uses `--cookies-from-browser {browser}`. Requires browser to be closed.
+7.  **Manual Import (L3):** User imports a `cookies.txt` file via file picker.
+8.  **Settings:** User configures preferred cookie method and default browser in Settings > Accounts.
 
 ## 4. File Structure Strategy
-```
-/app_data/                          (Tauri app_data_dir)
-  /binaries/
-    yt-dlp.exe                      (auto-updatable copy)
-    ffmpeg.exe
-  /database/
-    video_downloader_pro.db         (SQLite)
-  /logs/
-    app-2026-02-16.log              (daily rotation, 30 day retention)
-    /downloads/
-      task-{uuid}.log              (per-download debug log)
-  /trash/                           (soft-deleted files pending cleanup)
 
-/downloads/                         (user-configurable path)
+We prioritize a **User-First "Clean" Structure**. The user's download folder should contain *only* the media content they requested, organized logically. Metadata, cache, and raw thumbnails are stored internally.
+
+### 4.1. Directory Layout
+
+```text
+/app_data/                          (Tauri app_data_dir - Internal)
+  /library/                         (Internal Media Metadata)
+    /thumbs/
+      /YouTube/
+        VideoID_original.jpg
+        VideoID_300w.jpg
+    /avatars/
+      CreatorID.jpg
+
+  /system/                          (App Infrastructure)
+    /utils/
+      yt-dlp.exe
+      ffmpeg.exe
+    /database/
+      video_downloader_pro.db
+    /auth/
+      youtube.cookies.enc
+    /temp/
+      (transient cookie files)
+    /logs/
+      app.log
+      
+/downloads/                         (User-Configurable Path)
   /YouTube/
-    /CreatorName/
-      /PostTitle-ID/
-        Video.mp4
-        Video.mp4.thumbnail.jpg     (original from yt-dlp)
-        Video.mp4.thumb_sm.jpg      (300px reduced for Wall)
+    /My Chill Playlist/             (Source: Playlist Name)
+      20240101_LoFi_Beats_[ID].mp4
+      20240102_Jazz_Vibes_[ID].mp4
+    /MKBHD/                         (Source: Channel OR Direct Download)
+      20240215_Vision_Pro_Review_[ID].mp4
   /Instagram/
-    /CreatorName/
-      /PostTitle-ID/
-        Image1.jpg
-        Image2.jpg
-        Video.mp4
+    /Saved_Collection/              (Source: Saved Posts)
+      Image1_[ID].jpg
 ```
+
+### 4.2. Logic: "Smart Context" Grouping
+
+Files are grouped based on the **User's Intent** (how they initiated the download):
+
+1.  **Source-Based (Playlist/Collection):**
+    -   If the download comes from a tracked `Source` (e.g., a YouTube Playlist, an Instagram Collection), the folder name is the **Source Name**.
+    -   *Example:* Downloading the "Gym Music" playlist -> `/downloads/YouTube/Gym Music/`.
+
+2.  **Creator-Based (Channel/Direct):**
+    -   If the download is a direct URL or from a `Source` of type `CHANNEL`, the folder name is the **Creator Name**.
+    -   *Example:* Pasting a specific YouTube URL -> `/downloads/YouTube/CreatorName/`.
+
+3.  **Filename Convention:**
+    -   `{Date}_{Title_Sanitized}_[{ID}].{ext}`
+    -   Includes ID to ensure uniqueness.
+    -   Sanitized to remove illegal characters.
+
+### 4.3. Advantages
+-   **No Clutter:** Thumbnails and JSONs don't pollute the user's view.
+-   **User-Centric:** Respected the mental model of "Playlists" vs "Channels".
+-   **Portable:** Media files are standard and accessible without the app.
 
 ## 5. Sidecar Binaries Strategy
 

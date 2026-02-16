@@ -40,12 +40,14 @@ This project serves two purposes:
 -   **Search & Filter:** By title, creator, platform, date. *(Post-MVP)*
 
 ### E. Authentication & Cookies
--   **Layered approach:**
-    1.  No auth (public content) — default.
-    2.  `yt-dlp --cookies-from-browser <browser>` — age-restricted/private content.
-    3.  `yt-dlp --cookies <file>` — fallback when browser DB is locked.
--   **User configures** preferred browser in Settings.
--   **Account login** (username/password per platform) to be designed post-MVP.
+-   **4-Layer strategy** (progressive, from least to most user friction):
+    -   **L0 — No auth:** Public content downloads without any credentials (default, covers ~90% of use cases).
+    -   **L1 — Built-in Browser (WebView):** Primary login method. Opens a WebView2 window where the user logs into the platform directly inside the app. Cookies are captured automatically via `Webview::cookies_for_url()` and stored encrypted locally. Same UX pattern as *4K Video Downloader*.
+    -   **L2 — Browser cookie extraction:** `yt-dlp --cookies-from-browser <browser>` reads cookies from an installed browser (Chrome, Firefox, Edge, etc.). Used as automatic fallback or user preference. Limitation: browser must be closed (Chromium DB lock).
+    -   **L3 — Manual cookie file:** `yt-dlp --cookies <file>` uses an exported `cookies.txt` (Netscape format). Advanced fallback for edge cases.
+-   **Auto-detection:** The app first tries without auth; on restricted content errors, it automatically retries with stored cookies or prompts the user to log in.
+-   **Settings → Accounts:** Per-platform session status indicators (active/expired/none) with login/logout controls.
+-   **Security:** Cookies encrypted at rest (Windows DPAPI). Never transmitted externally. Temporary `cookies.txt` files are deleted after each yt-dlp invocation.
 
 ### F. Rate Limiting & Anti-Ban
 -   Configurable delays between downloads and metadata requests.

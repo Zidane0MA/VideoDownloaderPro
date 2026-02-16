@@ -71,10 +71,15 @@
 6.  **Duplicate Detection:**
     -   Pre-download: check `original_url` in `posts` table.
     -   Post-download: compute SHA-256, check against `media.checksum`.
-7.  **Cookie / Auth Integration:**
-    -   Read `preferred_browser` from `settings`.
-    -   On restricted content error → retry with `--cookies-from-browser`.
-    -   Fallback: prompt for `cookies.txt` path.
+7.  **Cookie / Auth Integration (CookieManager):**
+    -   **CookieManager module:** Central Rust module for all cookie operations.
+    -   Read/write `platform_sessions` table (encrypted cookies per platform).
+    -   **Session storage:** Encrypt cookies with Windows DPAPI, store in `app_data/auth/{platform}.cookies.enc`.
+    -   **Cookie health check:** Periodic verification of stored cookies (test request). Update `last_verified` and `status` in `platform_sessions`.
+    -   **Temp cookie file:** Generate temporary `cookies.txt` (Netscape format) for yt-dlp, delete after use.
+    -   On restricted content error → check stored cookies → retry with `--cookies`.
+    -   **Fallback chain:** Stored cookies → `--cookies-from-browser` → prompt user.
+    -   **WebView login support:** Open secondary WebView window, capture cookies via `Webview::cookies_for_url()` after user login.
 8.  **Tests:**
     -   Unit tests for yt-dlp output parsers (progress, metadata).
     -   Unit tests for queue state machine transitions.
@@ -97,7 +102,11 @@
 4.  **Settings Page:**
     -   Download path selector (native file picker).
     -   Concurrent downloads slider (1-10).
-    -   Cookie browser selector (Chrome/Firefox/Edge).
+    -   **Accounts section:**
+        -   Per-platform session status indicators (ACTIVE ● / EXPIRED ○ / NONE ○).
+        -   "Connect" / "Disconnect" buttons per platform.
+        -   Cookie method selector: WebView (recommended) / Browser / File import.
+        -   Browser selector dropdown (Chrome/Firefox/Edge) for fallback method.
     -   yt-dlp update button + version display.
     -   Language selector (EN/ES).
     -   Disk space dashboard.
@@ -140,13 +149,15 @@
     -   Graceful failure UX for all error categories (see `06_error_handling.md`).
     -   Toast notifications for non-blocking errors.
     -   Modal alerts for blocking errors (disk full, auth required).
+    -   **Auth-required modal:** Clear message explaining why login is needed, with "Login in browser" primary button opening WebView, and advanced options (browser extraction, file import) in collapsible section.
+    -   **WebView login window:** Secondary window rendering platform login page, with footer explaining cookie storage and privacy.
 3.  **Disk Space Management:**
     -   Pre-download space check.
     -   Low-space warning banner.
     -   Storage dashboard in Settings.
 4.  **Logging:**
     -   Ensure all operations are logged via `tracing`.
-    -   Per-download log files.
+    -   Daily consolidated log file (`app.log`).
     -   Log viewer in Settings (optional, post-MVP).
 5.  **Build & Distribution:**
     -   Update `tauri.conf.json` identifier + permissions.
@@ -160,8 +171,8 @@
 
 1.  **Sync Scheduler:**
     -   Background task that checks active sources on configurable interval.
-    -   Uses `yt-dlp` playlist extraction to detect new items.
-    -   Creates `download_tasks` for new items found.
+    -   Uses `yt-dlp` playlist extraction to get remote IDs.
+    -   **Deduplication:** Compares remote IDs vs DB. Queues only new items.
 2.  **Sync Modes Implementation:**
     -   `ALL`: Download entire channel/playlist archive.
     -   `FROM_NOW`: Track `last_checked`, only download newer items.

@@ -318,6 +318,88 @@ interface UpdateResult {
 
 ---
 
+### Session / Cookie Operations
+
+#### `open_platform_login`
+Opens a WebView window for the user to log into a platform. Cookies are captured automatically on close.
+
+```typescript
+const result = await invoke<LoginResult>('open_platform_login', {
+  platformId: string,  // 'youtube', 'instagram', 'tiktok', 'x'
+});
+```
+
+```typescript
+interface LoginResult {
+  success: boolean;
+  platformId: string;
+  status: 'ACTIVE' | 'EXPIRED' | 'NONE';
+  expiresAt: string | null;  // ISO 8601
+}
+```
+
+**Errors:** `PLATFORM_NOT_FOUND`, `WEBVIEW_ERROR`.
+
+---
+
+#### `get_session_status`
+Returns the current session status for one or all platforms.
+
+```typescript
+const sessions = await invoke<PlatformSession[]>('get_session_status', {
+  platformId?: string,  // Optional, omit for all platforms
+});
+```
+
+```typescript
+interface PlatformSession {
+  platformId: string;
+  status: 'ACTIVE' | 'EXPIRED' | 'NONE';
+  cookieMethod: 'webview' | 'browser' | 'file' | null;
+  expiresAt: string | null;
+  lastVerified: string | null;
+}
+```
+
+---
+
+#### `logout_platform`
+Clears stored cookies for a platform.
+
+```typescript
+await invoke('logout_platform', { platformId: string });
+```
+
+**Errors:** `PLATFORM_NOT_FOUND`.
+
+---
+
+#### `import_cookies_file`
+Imports a `cookies.txt` file for a specific platform.
+
+```typescript
+const result = await invoke<LoginResult>('import_cookies_file', {
+  platformId: string,
+  filePath: string,     // Absolute path to cookies.txt
+});
+```
+
+**Errors:** `PLATFORM_NOT_FOUND`, `INVALID_COOKIE_FILE` (wrong format or empty).
+
+---
+
+#### `set_cookie_method`
+Sets the preferred cookie method globally.
+
+```typescript
+await invoke('set_cookie_method', {
+  method: 'webview' | 'browser' | 'file',
+  browser?: string,  // Required if method is 'browser' (e.g., 'chrome', 'firefox')
+});
+```
+
+---
+
 ## 2. Events (Backend → Frontend)
 
 Events are emitted by the Rust backend and listened to by the React frontend via `listen()`.
@@ -392,6 +474,36 @@ interface YtdlpUpdatePayload {
 
 ---
 
+### `session-status-changed`
+Emitted when a platform session status changes (login, logout, expiration).
+
+```typescript
+interface SessionStatusPayload {
+  platformId: string;
+  oldStatus: 'ACTIVE' | 'EXPIRED' | 'NONE';
+  newStatus: 'ACTIVE' | 'EXPIRED' | 'NONE';
+  cookieMethod: 'webview' | 'browser' | 'file' | null;
+  expiresAt: string | null;
+}
+```
+
+---
+
+### `auth-required`
+Emitted when a download requires authentication and no valid cookies are available.
+
+```typescript
+interface AuthRequiredPayload {
+  taskId: string;
+  platformId: string;
+  url: string;
+  errorCode: 'AUTH_001' | 'AUTH_002' | 'AUTH_003';
+  message: string;
+}
+```
+
+---
+
 ## 3. Error Response Format
 
 All `invoke()` errors follow this structure:
@@ -417,3 +529,8 @@ Common error codes:
 | `SIDECAR_NOT_FOUND` | yt-dlp or ffmpeg binary not found |
 | `DB_ERROR` | Database operation failed |
 | `SETTING_NOT_FOUND` | Unknown setting key |
+| `PLATFORM_NOT_FOUND` | Unknown platform ID |
+| `AUTH_REQUIRED` | Download needs authentication (no valid cookies) |
+| `SESSION_EXPIRED` | Stored cookies are expired |
+| `WEBVIEW_ERROR` | WebView login window failed to open or capture cookies |
+| `INVALID_COOKIE_FILE` | Imported cookies.txt is malformed or empty |

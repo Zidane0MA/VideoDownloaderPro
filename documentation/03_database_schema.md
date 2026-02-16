@@ -65,6 +65,7 @@ Represents a single entry/upload (e.g., a Tweet, an IG Post, a YT Video containe
 | `posted_at` | DATETIME | | Original upload date |
 | `downloaded_at` | DATETIME | | When download completed |
 | `deleted_at` | DATETIME | NULLABLE | NULL = active, timestamp = in trash |
+| `raw_json` | TEXT | NULLABLE | Full yt-dlp JSON dump (compressed) |
 | `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | Record creation |
 
 ### 5. `media`
@@ -123,8 +124,8 @@ Key-value store for user preferences.
 |---|---|---|
 | `download_path` | `~/Downloads/VideoDownloaderPro` | Default download directory |
 | `max_concurrent_downloads` | `3` | Simultaneous downloads (1-10) |
-| `preferred_browser` | `chrome` | For cookie extraction |
-| `always_use_cookies` | `false` | Send cookies on every request |
+| `cookie_method` | `webview` | Preferred auth method: `webview`, `browser`, `file` |
+| `cookie_browser` | `chrome` | Browser for `--cookies-from-browser` fallback |
 | `default_video_format` | `best` | yt-dlp format selection |
 | `default_audio_format` | `best` | For audio extraction |
 | `trash_auto_clean_days` | `30` | Days before auto-deleting trash |
@@ -136,6 +137,20 @@ Key-value store for user preferences.
 | `sleep_interval` | `2` | Seconds between downloads |
 | `sleep_requests` | `1` | Seconds between metadata requests |
 
+### 8. `platform_sessions` *(New)*
+Stores encrypted session cookies per platform for authenticated downloads.
+
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `platform_id` | TEXT | PRIMARY KEY, FK → `platforms.id` | One session per platform |
+| `status` | TEXT | NOT NULL, DEFAULT `'NONE'` | Enum: `ACTIVE`, `EXPIRED`, `NONE` |
+| `encrypted_cookies` | BLOB | | Cookies encrypted with Windows DPAPI |
+| `cookie_method` | TEXT | NOT NULL, DEFAULT `'webview'` | How cookies were obtained: `webview`, `browser`, `file` |
+| `expires_at` | DATETIME | NULLABLE | Estimated cookie expiration |
+| `last_verified` | DATETIME | NULLABLE | Last successful use of these cookies |
+| `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | |
+| `updated_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | |
+
 ---
 
 ## Relationships
@@ -144,6 +159,7 @@ Key-value store for user preferences.
 erDiagram
     platforms ||--o{ creators : "has"
     platforms ||--o{ sources : "has"
+    platforms ||--o| platform_sessions : "authenticates"
     creators ||--o{ posts : "authored"
     creators ||--o{ sources : "linked to"
     sources ||--o{ posts : "produced"

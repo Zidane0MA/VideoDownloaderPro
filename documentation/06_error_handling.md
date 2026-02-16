@@ -84,10 +84,11 @@ graph TD
 
 | Code | Error | Detection | Auto-Retry | Recovery |
 |---|---|---|---|---|
-| `AUTH_001` | Login required | stderr: "Sign in", "login required" | ❌ | Prompt cookie configuration modal. |
-| `AUTH_002` | Age-gated content | stderr: "age", "Sign in to confirm" | Auto-retry with cookies | Retry with `--cookies-from-browser`. If still fails, prompt manual cookies.txt. |
-| `AUTH_003` | Cookie expired / invalid | Cookies sent but still 403/401 | ❌ | Prompt to refresh cookies (re-login in browser, re-export). |
-| `AUTH_004` | Browser cookie DB locked | Rust/yt-dlp can't read browser cookies | ❌ | Prompt: close browser or use cookies.txt file. |
+| `AUTH_001` | Login required | stderr: "Sign in", "login required" | ❌ | Emit `auth-required` event. Show login modal with WebView as primary option. |
+| `AUTH_002` | Age-gated content | stderr: "age", "Sign in to confirm" | Auto-retry with stored cookies | Retry with stored cookies. If expired/missing, open WebView login. |
+| `AUTH_003` | Cookie expired / invalid | Cookies sent but still 403/401 | ❌ | Update `platform_sessions.status` to `EXPIRED`. Show "Refresh session" prompt → reopens WebView login. |
+| `AUTH_004` | Browser cookie DB locked | yt-dlp can't read browser cookies | ❌ | Non-critical (browser extraction is fallback). Suggest using WebView login or importing cookies.txt. |
+| `AUTH_005` | WebView login failed | WebView blocked (CAPTCHA, bot detection) | ❌ | Fallback to `--cookies-from-browser`. If that fails, prompt cookies.txt import. |
 
 ---
 
@@ -111,8 +112,8 @@ Every error is logged with:
   stderr: "full yt-dlp stderr output"
 ```
 
-- **Per-download logs:** `app_data/logs/downloads/task-{uuid}.log`
-- **App log:** `app_data/logs/app-YYYY-MM-DD.log`
+- **App log:** `app_data/logs/app-YYYY-MM-DD.log` (Rotated daily)
+- **Task context:** structural logs include `task_id` field for filtering.
 
 ---
 
@@ -150,3 +151,4 @@ Example:
 | Download path writable | App launch + before each download | Warning + suggest path change |
 | Disk space sufficient | Before each download | Warning if < threshold |
 | Internet connectivity | Before each download | Queue pauses, retry when online |
+| Cookie session valid | Every 24h + before auth-required download | Update `platform_sessions.status`. Emit `session-status-changed` if expired. |

@@ -166,4 +166,4 @@ When the URL is a playlist:
 2. One `download_task` is created per playlist item (priority: 5).
 3. All tasks share the same `source_id` (if configured).
 4. A parent "playlist group" can be tracked via a shared `batch_id` field (optional enhancement).
-5. `--download-archive app_data/archives/{source_id}.txt` prevents re-downloading seen items.
+5. **Deduplication:** Scheduler checks existing posts in DB. Only new items are queued. NO `.txt` archives.
