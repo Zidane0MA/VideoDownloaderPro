@@ -8,6 +8,5 @@ Phase 2 is complete. Database layer is set up with SQLite + Sea-ORM. Moving to P
 *   [x] **Sidecar Manager (Phase 3.1):** `sidecar/` module with `get_version()`, `update_yt_dlp()`, `check_all()`. Three IPC commands: `get_sidecar_status`, `get_sidecar_version`, `update_sidecar`. 4 unit tests for version parsing.
 
 ## Next Steps
-1.  **Metadata Fetcher:** Parse yt-dlp JSON output into Post/Creator/Media entities.
-2.  **Download Worker:** Execute yt-dlp downloads with progress tracking.
-3.  **Queue System:** Background worker pool with concurrency management.
+1.  **Download Worker (Phase 3.3):** Execute yt-dlp downloads with progress tracking.
+2.  **Queue System:** Background worker pool with concurrency management.

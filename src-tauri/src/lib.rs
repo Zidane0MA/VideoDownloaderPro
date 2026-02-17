@@ -1,6 +1,7 @@
 mod commands;
 pub mod db;
 mod entity;
+pub mod metadata;
 mod migration;
 pub mod sidecar;
 
