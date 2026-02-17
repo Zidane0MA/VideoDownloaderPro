@@ -37,22 +37,5 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
-  },
-  "plugins": {
-    "shell": {
-      "sidecar": true,
-      "scope": [
-        {
-          "name": "binaries/yt-dlp",
-          "sidecar": true,
-          "args": true
-        },
-        {
-          "name": "binaries/ffmpeg",
-          "sidecar": true,
-          "args": true
-        }
-      ]
-    }
   }
 }

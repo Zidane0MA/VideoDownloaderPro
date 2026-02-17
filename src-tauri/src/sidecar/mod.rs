@@ -60,10 +60,18 @@ pub async fn setup_sidecars(handle: &AppHandle) -> Result<(), SidecarError> {
     // Specifically: resources/binaries/<name>-<target>
     // Since we don't know the exact target triple easily at runtime without build hacks,
     // we search for files starting with the program name in the bundled binaries folder.
-    let bundled_bin_dir = resource_dir.join("binaries");
+    let possible_paths = [
+        resource_dir.join("binaries"),
+        PathBuf::from("src-tauri/binaries"),
+        PathBuf::from("binaries"),
+    ];
+
+    let bundled_bin_dir = possible_paths.iter().find(|p| p.exists()).ok_or_else(|| {
+        SidecarError::SetupFailed("Could not find bundled binaries directory".into())
+    })?;
 
     for binary in [SidecarBinary::YtDlp, SidecarBinary::Ffmpeg] {
-        let name = binary.program_name(); // "yt-dlp" or "ffmpeg"
+        let name = binary.display_name(); // "yt-dlp" or "ffmpeg"
         let target_filename = if cfg!(windows) {
             format!("{}.exe", name)
         } else {
@@ -182,7 +190,7 @@ pub fn get_binary_path(handle: &AppHandle, binary: SidecarBinary) -> Result<Path
         .app_data_dir()
         .map_err(|_| SidecarError::BinaryNotFound("Could not resolve app_data".into()))?;
 
-    let name = binary.program_name();
+    let name = binary.display_name();
     let filename = if cfg!(windows) {
         format!("{}.exe", name)
     } else {
