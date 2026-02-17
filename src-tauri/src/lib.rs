@@ -1,5 +1,6 @@
 mod commands;
 pub mod db;
+pub mod download;
 mod entity;
 pub mod metadata;
 mod migration;
@@ -67,6 +68,7 @@ pub fn run() {
             commands::sidecar::get_sidecar_status,
             commands::sidecar::get_ytdlp_version,
             commands::sidecar::update_ytdlp,
+            commands::download::create_download_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -5762,6 +5762,7 @@ name = "video-downloader-pro"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "regex",
  "sea-orm",
  "sea-orm-migration",
  "serde",

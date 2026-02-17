@@ -16,7 +16,7 @@
 ### Phase 3: Download Engine (Rust)
 - [x] Sidecar Manager (Update/Copy)
 - [x] Metadata Fetcher
-- [ ] Download Worker
+- [x] Download Worker
 - [ ] Queue System
 
 ### Phase 4: Frontend - Download Manager
