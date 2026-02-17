@@ -1,16 +1,19 @@
 # Active Context
 
-**Phase 4: Frontend - Download Manager UI**
-Phase 3 (Backend) is complete. Documentation is consolidated. Moving to Phase 4: building the visual interface for downloads.
+> [!IMPORTANT]
+> When planning new features, ALWAYS consult `/docs` for the authoritative detailed requirements. The Memory Bank is a high-level summary and may not capture every edge case or UI element specified in the roadmap.
+
+**Phase 4: Frontend - Download Manager UI (In Progress)**
+Phase 3 (Backend) is functional for public downloads but lacks Auth/Cookie integration. Phase 4 has a basic UI but lacks advanced settings.
 
 ## Recent Changes
-- **Frontend UI Implemented**: Created `Settings` page, implemented Navigation (`App.tsx`), and integrated `DownloadsList` / `AddDownloadModal`.
-- **Backend Complete**: Queue system, workers, and IPC fully operational.
+- **Frontend UI Implemented**: Created `Settings` page (basic), implemented Navigation (`App.tsx`), and integrated `DownloadsList` / `AddDownloadModal`.
+- **Backend Functional**: Queue system, workers, and IPC fully operational for public videos.
 - **Robustness Improvements**: Fixed pause/cancel, file size accuracy, and global queue control.
 
 ## Current State
-- Backend: Ready and robust.
-- Frontend: Download Manager UI and Settings page implemented. Navigation active.
+- **Backend**: Core download engine ready. **Missing**: Cookie/Auth Manager (`cookie_store`, `platform_sessions`).
+- **Frontend**: Download loop working. **Missing**: Advanced Settings (Path picker, Concurrency, Accounts, Updates).
 
 ## Next Steps
 1.  **Verification**:

@@ -13,16 +13,17 @@
 - [x] Sea-ORM Entities
 - [x] Basic Tests
 
-### Phase 3: Download Engine (Rust) (Completed)
+### Phase 3: Download Engine (Rust) (Partial)
 - [x] Sidecar Manager (Update/Copy)
 - [x] Metadata Fetcher
 - [x] Download Worker
 - [x] Queue System
+- [ ] Cookie / Auth Integration (CookieManager)
 
-### Phase 4: Frontend - Download Manager (Completed)
+### Phase 4: Frontend - Download Manager (Partial)
 - [x] Active Downloads UI
 - [x] URL Input & Preview
-- [x] Settings Page
+- [ ] Settings Page (Advanced options missing: Path, Auth, etc.)
 
 ### Phase 5: Frontend - Gallery (Wall)
 - [ ] Virtualized Grid

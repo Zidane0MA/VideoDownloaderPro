@@ -1,5 +1,8 @@
 # Project Brief: Video Downloader Pro
 
+> [!NOTE]
+> Detailed technical specifications, API contracts, and roadmap items are maintained in `/docs`. This file serves as a high-level overview. Always cross-reference `/docs` during implementation.
+
 ## Top-Level Goals
 1.  **Professional Desktop Application:** Build a high-performance, native-feeling Windows application for downloading video/audio from 1000+ sites (YouTube, TikTok, Instagram, X).
 2.  **"Wall of Content" Experience:** Differentiate from competitors (like *4K Video Downloader*) by offering a visually rich, pinterest-style gallery of downloaded content, rather than just a list of files.
