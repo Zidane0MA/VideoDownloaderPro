@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
-import { Moon, Sun, Monitor, Info } from 'lucide-react';
+import { Moon, Sun, Monitor, Info, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { AccountCard } from './settings/AccountCard';
+import { PLATFORMS } from '../types/auth';
+import { useAuthStatus } from '../hooks/useAuth';
 
 export const Settings: React.FC = () => {
   const { t } = useTranslation();
+  const { data: authStatus } = useAuthStatus();
   // Placeholder for theme state - in a real app this would come from a theme store/context
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('dark'); 
 
@@ -15,6 +19,34 @@ export const Settings: React.FC = () => {
       </div>
 
       <div className="space-y-6">
+        {/* Accounts Section */}
+        <section className="bg-surface-800 border border-surface-700 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-surface-700">
+            <h3 className="font-semibold text-white flex items-center gap-2">
+              <Users className="w-4 h-4 text-brand-400" />
+              {t('settings.accounts', 'Accounts')}
+            </h3>
+          </div>
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-surface-400">
+              Manage your connected accounts for restricted content.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {PLATFORMS.map((platform) => {
+                const session = authStatus?.find((s) => s.platform_id === platform.id);
+                return (
+                  <AccountCard
+                    key={platform.id}
+                    platformId={platform.id}
+                    name={platform.name}
+                    session={session}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
         {/* Appearance Section */}
         <section className="bg-surface-800 border border-surface-700 rounded-xl overflow-hidden">
           <div className="px-6 py-4 border-b border-surface-700">

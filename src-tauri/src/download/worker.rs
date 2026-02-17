@@ -1,4 +1,5 @@
 use super::parser::Parser;
+use crate::auth::cookie_manager::CookieManager;
 use crate::entity::download_task;
 use crate::metadata::{fetcher, store};
 use crate::sidecar::{get_binary_path, types::SidecarBinary};
@@ -7,11 +8,12 @@ use serde::Serialize;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
+use tauri::Manager;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
-use tokio_util::sync::CancellationToken;
+use tokio_util::sync::CancellationToken; // Ensure Manager is imported for state access
 
 /// Minimum interval between progress emissions to avoid flooding the IPC bridge.
 const PROGRESS_THROTTLE: Duration = Duration::from_millis(500);
@@ -112,18 +114,56 @@ impl DownloadWorker {
             }
         })?;
 
+        // --- Auth / Cookie Setup ---
+        // We do this BEFORE metadata fetch because age-gated videos require cookies even for metadata.
+        let cookie_manager = self.app.state::<std::sync::Arc<CookieManager>>();
+        let mut temp_cookie_path: Option<PathBuf> = None;
+        let platform_id = if url.contains("youtube.com") || url.contains("youtu.be") {
+            Some("youtube")
+        } else if url.contains("tiktok.com") {
+            Some("tiktok")
+        } else if url.contains("instagram.com") {
+            Some("instagram")
+        } else if url.contains("x.com") || url.contains("twitter.com") {
+            Some("x")
+        } else {
+            None
+        };
+
+        if let Some(pid) = platform_id {
+            match cookie_manager.create_temp_cookie_file(pid).await {
+                Ok(path) => {
+                    if let Some(p) = path {
+                        tracing::info!("Using cookies for platform: {}", pid);
+                        temp_cookie_path = Some(p);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to create temp cookie file for {}: {}", pid, e);
+                }
+            }
+        }
+
         // --- Metadata Fetch Step ---
         // Check if task already has a linked Post. If not, fetch and save metadata first.
         let task = download_task::Entity::find_by_id(&task_id)
             .one(&db)
             .await
-            .map_err(|e| DownloadError::Failed {
-                message: format!("DB error: {}", e),
-                total_bytes: None,
-                downloaded_bytes: 0,
-                filename: None,
+            .map_err(|e| {
+                // Try cleanup if we fail early
+                if let Some(_path) = &temp_cookie_path {
+                    // We can't await easily in map_err, but we should try.
+                    // Verify if we can just log here.
+                    tracing::error!("DB error: {}", e);
+                }
+                DownloadError::Failed {
+                    message: format!("DB error: {}", e),
+                    total_bytes: None,
+                    downloaded_bytes: 0,
+                    filename: None,
+                }
             })?
-            .ok_or(DownloadError::Failed {
+            .ok_or_else(|| DownloadError::Failed {
                 message: "Task not found".to_string(),
                 total_bytes: None,
                 downloaded_bytes: 0,
@@ -132,10 +172,9 @@ impl DownloadWorker {
 
         if task.post_id.is_none() {
             tracing::info!("Task {} has no metadata (post_id), fetching...", task_id);
-            // Notify UI we are fetching metadata (optional, maybe via a status update?)
-            // For now, we just log it.
 
-            match fetcher::fetch_metadata(&self.app, &url).await {
+            // Pass the cookie path to fetcher
+            match fetcher::fetch_metadata(&self.app, &url, temp_cookie_path.as_ref()).await {
                 Ok(metadata) => {
                     match store::save_metadata(&db, metadata).await {
                         Ok(post_id) => {
@@ -156,6 +195,10 @@ impl DownloadWorker {
                         }
                         Err(e) => {
                             tracing::error!("Failed to save metadata for task {}: {}", task_id, e);
+                            // Verify cleanup
+                            if let Some(path) = &temp_cookie_path {
+                                let _ = cookie_manager.cleanup_temp_file(path).await;
+                            }
                             return Err(DownloadError::Failed {
                                 message: format!("Metadata save error: {}", e),
                                 total_bytes: None,
@@ -167,8 +210,10 @@ impl DownloadWorker {
                 }
                 Err(e) => {
                     tracing::error!("Failed to fetch metadata for task {}: {}", task_id, e);
-                    // Decide: Fail the download if metadata fails?
-                    // Yes, because we need the Post record for the UI/History.
+                    // Verify cleanup
+                    if let Some(path) = &temp_cookie_path {
+                        let _ = cookie_manager.cleanup_temp_file(path).await;
+                    }
                     return Err(DownloadError::Failed {
                         message: format!("Metadata fetch error: {}", e),
                         total_bytes: None,
@@ -181,6 +226,15 @@ impl DownloadWorker {
 
         let mut cmd = Command::new(binary_path);
 
+        let qjs_path =
+            get_binary_path(&self.app, SidecarBinary::Qjs).map_err(|e| DownloadError::Failed {
+                message: format!("QuickJS not found: {}", e),
+                total_bytes: None,
+                downloaded_bytes: 0,
+                filename: None,
+            })?;
+        let qjs_arg = format!("quickjs:{}", qjs_path.to_string_lossy());
+
         // --newline is CRITICAL for line-by-line progress parsing
         // -c enables resume of partial downloads (for pause/resume support)
         cmd.arg("--newline")
@@ -192,7 +246,14 @@ impl DownloadWorker {
             .arg("%(title)s.%(ext)s")
             // Rate limit for debugging/stability (5MB/s)
             .arg("--limit-rate")
-            .arg("5M");
+            .arg("5M")
+            .arg("--js-runtimes")
+            .arg(qjs_arg);
+
+        // Inject cookies if available
+        if let Some(ref cookie_path) = temp_cookie_path {
+            cmd.arg("--cookies").arg(cookie_path);
+        }
 
         // Apply format selection if specified
         if let Some(ref fmt) = format_selection {
@@ -417,7 +478,7 @@ impl DownloadWorker {
             })?
         };
 
-        if status.success() {
+        let result = if status.success() {
             // Prefer merged filename (final output) over intermediate destination filename.
             let result_filename = merged_filename.or(final_filename);
 
@@ -472,7 +533,14 @@ impl DownloadWorker {
                 downloaded_bytes: final_downloaded_bytes,
                 filename: final_filename.clone(),
             })
+        };
+
+        // Cleanup temp cookie file
+        if let Some(path) = temp_cookie_path {
+            let _ = cookie_manager.cleanup_temp_file(&path).await;
         }
+
+        result
     }
 }
 

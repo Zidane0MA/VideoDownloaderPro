@@ -9,6 +9,7 @@ graph TD
     Core <-->|Sea-ORM| DB[(SQLite)]
     Core -->|Spawn| YTDLP[yt-dlp.exe]
     Core -->|Spawn| FFMPEG[ffmpeg.exe]
+    Core -->|Spawn| QJS[qjs.exe]
     Core -->|File System| Storage[Downloads / Metadata]
 ```
 
@@ -20,7 +21,7 @@ graph TD
 *   **Typed Contract:** All IPC payloads are strictly typed in TypeScript and Rust (see `07_ipc_api_contract.md`).
 
 ### 6. Git Strategy regarding Sidecars
-*   **Binaries Ignored:** `yt-dlp.exe` and `ffmpeg.exe` are added to `.gitignore` to keep the repo light (~100MB saved).
+*   **Binaries Ignored:** `yt-dlp`, `ffmpeg`, and `qjs` are added to `.gitignore`.
 *   **Download Script:** A PowerShell script (`scripts/download-sidecars.ps1`) is provided to fetch the correct versions for the dev environment.
 
 ### 7. Frontend Styling
@@ -52,6 +53,6 @@ A progressive strategy to handle platform restrictions (YouTube, Instagram, etc.
 *   **Graceful Degradation:** The app suggests specific fixes (e.g., "Login required" opens the auth modal) rather than generic "Failed" messages.
 
 ## Design Patterns
-*   **Sidecar Pattern:** `yt-dlp` and `ffmpeg` are bundled binaries, managed and updated by the app.
+*   **Sidecar Pattern:** `yt-dlp`, `ffmpeg`, and `quickjs` are bundled binaries, managed and updated by the app.
 *   **Repository Pattern:** Sea-ORM entities abstract the database access.
 *   **Observer Pattern:** Frontend subscribes to backend state changes (progress, status).

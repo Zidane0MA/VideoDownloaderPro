@@ -5,10 +5,19 @@ use tauri::AppHandle;
 use tokio::process::Command;
 
 /// Runs `yt-dlp --dump-single-json --flat-playlist <url>` and returns the parsed metadata.
-pub async fn fetch_metadata(app: &AppHandle, url: &str) -> Result<YtDlpOutput, MetadataError> {
+pub async fn fetch_metadata(
+    app: &AppHandle,
+    url: &str,
+    cookie_path: Option<&std::path::PathBuf>,
+) -> Result<YtDlpOutput, MetadataError> {
     let sidecar = SidecarBinary::YtDlp;
     let binary_path =
         get_binary_path(app, sidecar).map_err(|e| MetadataError::Sidecar(e.to_string()))?;
+
+    let sidecar_qjs = SidecarBinary::Qjs;
+    let qjs_path = get_binary_path(app, sidecar_qjs)
+        .map_err(|e| MetadataError::Sidecar(format!("QuickJS not found: {}", e)))?;
+    let qjs_arg = format!("quickjs:{}", qjs_path.to_string_lossy());
 
     // Construct arguments
     // --dump-single-json: Ensure we get a single JSON object (Video or Playlist)
@@ -19,7 +28,16 @@ pub async fn fetch_metadata(app: &AppHandle, url: &str) -> Result<YtDlpOutput, M
     cmd.arg("--dump-single-json")
         .arg("--flat-playlist")
         .arg("--no-warnings")
-        .arg(url);
+        .arg("-f")
+        .arg("bestvideo+bestaudio/best")
+        .arg("--js-runtimes")
+        .arg(qjs_arg);
+
+    if let Some(path) = cookie_path {
+        cmd.arg("--cookies").arg(path);
+    }
+
+    cmd.arg(url);
 
     #[cfg(windows)]
     {

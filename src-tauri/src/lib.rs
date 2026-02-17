@@ -1,9 +1,10 @@
+pub mod auth;
 mod commands;
 pub mod db;
 pub mod download;
 mod entity;
 pub mod metadata;
-mod migration;
+pub mod migration;
 pub mod queue;
 pub mod sidecar;
 
@@ -27,18 +28,32 @@ pub struct AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Initialize tracing
-    let subscriber = fmt::Subscriber::builder()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .with_target(true)
-        .with_thread_names(true)
-        .finish();
+    // Initialize tracing with file appender
+    // Store logs in ./logs for easy access during dev, or standard location in prod if needed.
+    // For this context, "./logs" relative to CWD is best.
+    let file_appender = tracing_appender::rolling::daily("logs", "app.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
-    tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+    tracing_subscriber::registry()
+        .with(
+            fmt::layer()
+                .with_target(true)
+                .with_thread_names(true)
+                .with_writer(std::io::stdout),
+        )
+        .with(
+            fmt::layer()
+                .with_ansi(false)
+                .with_writer(non_blocking)
+                .with_target(true),
+        )
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .init();
 
     tracing::info!("Video Downloader Pro starting...");
+    tracing::info!("Logs are being written to ./logs");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -50,8 +65,9 @@ pub fn run() {
                 .expect("Failed to resolve app data directory");
 
             // Initialize the database synchronously within the async runtime
-            let db = tauri::async_runtime::block_on(async { db::init_db(app_data_dir).await })
-                .expect("Failed to initialize database");
+            let db =
+                tauri::async_runtime::block_on(async { db::init_db(app_data_dir.clone()).await })
+                    .expect("Failed to initialize database");
 
             tracing::info!("Database initialized successfully");
 
@@ -64,7 +80,15 @@ pub fn run() {
                 }
             });
 
-            app.manage(AppState { db });
+            app.manage(AppState { db: db.clone() });
+
+            // Initialize CookieManager
+            let cookie_manager = std::sync::Arc::new(auth::cookie_manager::CookieManager::new(
+                db.clone().into(),
+                app_data_dir.clone(),
+            ));
+            let _ = cookie_manager.init(); // Fire and forget init (create temp dir)
+            app.manage(cookie_manager);
 
             // Initialize Download Queue (Max 3 concurrent downloads)
             let queue = queue::DownloadQueue::new(app.handle().clone(), 3);
@@ -133,6 +157,11 @@ pub fn run() {
             commands::download::resume_download_task,
             commands::download::pause_queue,
             commands::download::resume_queue,
+            commands::auth::get_auth_status,
+            commands::auth::update_session,
+            commands::auth::delete_session,
+            commands::auth::import_from_browser,
+            commands::auth::open_login_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

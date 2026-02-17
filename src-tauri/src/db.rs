@@ -1,6 +1,7 @@
-use sea_orm::{Database, DatabaseConnection, DbErr};
+use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr};
 use sea_orm_migration::MigratorTrait;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use crate::migration::Migrator;
 
@@ -22,7 +23,17 @@ pub async fn init_db(app_data_dir: PathBuf) -> Result<DatabaseConnection, DbErr>
 
     tracing::info!(path = %db_path.display(), "Connecting to SQLite database");
 
-    let db = Database::connect(&db_url).await?;
+    // Configure connection options to reduce log verbosity
+    let mut opt = ConnectOptions::new(db_url);
+    opt.max_connections(100)
+        .min_connections(5)
+        .connect_timeout(Duration::from_secs(8))
+        .acquire_timeout(Duration::from_secs(8))
+        .idle_timeout(Duration::from_secs(8))
+        .max_lifetime(Duration::from_secs(8))
+        .sqlx_logging(false); // Disable verbose SQL logging
+
+    let db = Database::connect(opt).await?;
 
     // Run pending migrations
     tracing::info!("Running pending database migrations...");

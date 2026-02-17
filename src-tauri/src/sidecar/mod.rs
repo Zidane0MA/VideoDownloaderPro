@@ -208,14 +208,20 @@ pub fn get_binary_path(handle: &AppHandle, binary: SidecarBinary) -> Result<Path
 pub async fn check_all(handle: &AppHandle) -> SidecarStatus {
     let yt_dlp = check_one(handle, SidecarBinary::YtDlp).await;
     let ffmpeg = check_one(handle, SidecarBinary::Ffmpeg).await;
+    let qjs = check_one(handle, SidecarBinary::Qjs).await;
 
     tracing::info!(
         yt_dlp_available = yt_dlp.available,
         ffmpeg_available = ffmpeg.available,
+        qjs_available = qjs.available,
         "Sidecar health check complete"
     );
 
-    SidecarStatus { yt_dlp, ffmpeg }
+    SidecarStatus {
+        yt_dlp,
+        ffmpeg,
+        qjs,
+    }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -252,6 +258,8 @@ fn parse_version(binary: SidecarBinary, raw: &str) -> Result<String, SidecarErro
     match binary {
         // yt-dlp --version prints just the date string: "2025.01.15"
         SidecarBinary::YtDlp => Ok(first_line.to_string()),
+        // qjs --version -> "QuickJS version 2024-01-13" or similar
+        SidecarBinary::Qjs => Ok(first_line.to_string()),
         // ffmpeg -version prints: "ffmpeg version N-118193-g..."
         // We extract everything after "ffmpeg version " up to the next space.
         SidecarBinary::Ffmpeg => {

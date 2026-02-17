@@ -1,3 +1,3 @@
-// IPC command handlers
+pub mod auth;
 pub mod download;
 pub mod sidecar;

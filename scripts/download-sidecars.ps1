@@ -1,4 +1,3 @@
-#!/usr/bin/env pwsh
 # download-sidecars.ps1
 # Downloads yt-dlp.exe and ffmpeg.exe to src-tauri/binaries/ with target-triple naming.
 # Run this script before `npm run tauri dev` or `npm run tauri build`.

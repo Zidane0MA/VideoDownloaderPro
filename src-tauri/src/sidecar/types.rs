@@ -6,6 +6,7 @@ use serde::Serialize;
 pub enum SidecarBinary {
     YtDlp,
     Ffmpeg,
+    Qjs,
 }
 
 impl SidecarBinary {
@@ -14,6 +15,7 @@ impl SidecarBinary {
         match self {
             Self::YtDlp => "binaries/yt-dlp",
             Self::Ffmpeg => "binaries/ffmpeg",
+            Self::Qjs => "binaries/qjs",
         }
     }
 
@@ -22,6 +24,7 @@ impl SidecarBinary {
         match self {
             Self::YtDlp => &["--version"],
             Self::Ffmpeg => &["-version"],
+            Self::Qjs => &["--version"], // qjs supports --version? Yes usually.
         }
     }
 
@@ -30,6 +33,7 @@ impl SidecarBinary {
         match self {
             Self::YtDlp => "yt-dlp",
             Self::Ffmpeg => "ffmpeg",
+            Self::Qjs => "quickjs",
         }
     }
 }
@@ -50,4 +54,5 @@ pub struct SidecarInfo {
 pub struct SidecarStatus {
     pub yt_dlp: SidecarInfo,
     pub ffmpeg: SidecarInfo,
+    pub qjs: SidecarInfo,
 }
