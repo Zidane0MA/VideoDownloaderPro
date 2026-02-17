@@ -30,94 +30,101 @@ const taskId = await invoke<string>('create_download_task', {
 
 ---
 
-#### `get_download_tasks`
-Fetches all download tasks with optional filtering.
+#### `get_queue_status`
+Fetches all download tasks and global queue status.
 
 ```typescript
-const tasks = await invoke<DownloadTask[]>('get_download_tasks', {
-  status?: string[],    // Filter by status(es)
-  limit?: number,       // Default: 50
-  offset?: number,      // Default: 0
-});
+const status = await invoke<QueueStatusResponse>('get_queue_status');
 ```
 
-**Returns:** `DownloadTask[]`
+**Returns:**
 
 ```typescript
+interface QueueStatusResponse {
+  isPaused: boolean;
+  tasks: DownloadTask[];
+}
+
 interface DownloadTask {
   id: string;
   url: string;
   postId: string | null;
   status: 'QUEUED' | 'FETCHING_META' | 'READY' | 'DOWNLOADING' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
   priority: number;
-  progress: number;       // 0.0 to 1.0
+  progress: number;       // 0.0 to 100.0 (Updated from 0.0-1.0 to match backend)
   speed: string | null;   // "2.5 MiB/s"
   eta: string | null;     // "00:05:23"
   errorMessage: string | null;
   retries: number;
+  maxRetries: number;
   formatSelection: string | null;
   createdAt: string;      // ISO 8601
   startedAt: string | null;
   completedAt: string | null;
-  // Enriched from metadata (if available)
-  title: string | null;
-  creatorName: string | null;
-  thumbnailUrl: string | null;
 }
 ```
 
 ---
 
-#### `pause_download`
+#### `pause_download_task`
 Pauses an active download.
 
 ```typescript
-await invoke('pause_download', { taskId: string });
+await invoke('pause_download_task', { taskId: string });
 ```
 
-**Errors:** `TASK_NOT_FOUND`, `INVALID_STATE` (if not DOWNLOADING).
+**Errors:** `TASK_NOT_FOUND`, `INVALID_STATE`.
 
 ---
 
-#### `resume_download`
+#### `resume_download_task`
 Resumes a paused download.
 
 ```typescript
-await invoke('resume_download', { taskId: string });
+await invoke('resume_download_task', { taskId: string });
 ```
 
-**Errors:** `TASK_NOT_FOUND`, `INVALID_STATE` (if not PAUSED).
+**Errors:** `TASK_NOT_FOUND`, `INVALID_STATE`.
 
 ---
 
-#### `cancel_download`
+#### `pause_queue`
+Globally pauses the download queue.
+
+```typescript
+await invoke('pause_queue');
+```
+
+---
+
+#### `resume_queue`
+Resumes the download queue.
+
+```typescript
+await invoke('resume_queue');
+```
+
+---
+
+#### `cancel_download_task`
 Cancels a download and cleans up partial files.
 
 ```typescript
-await invoke('cancel_download', { taskId: string });
+await invoke('cancel_download_task', { taskId: string });
 ```
 
-**Errors:** `TASK_NOT_FOUND`, `INVALID_STATE` (if already COMPLETED/CANCELLED).
+**Errors:** `TASK_NOT_FOUND`.
 
 ---
 
-#### `retry_download`
+#### `retry_download_task`
 Retries a failed download.
 
 ```typescript
-await invoke('retry_download', { taskId: string });
+await invoke('retry_download_task', { taskId: string });
 ```
 
-**Errors:** `TASK_NOT_FOUND`, `INVALID_STATE` (if not FAILED).
-
----
-
-#### `remove_download_task`
-Removes a download task from the list (COMPLETED, FAILED, or CANCELLED only).
-
-```typescript
-await invoke('remove_download_task', { taskId: string });
-```
+**Errors:** `TASK_NOT_FOUND`, `INVALID_STATE`.
 
 ---
 

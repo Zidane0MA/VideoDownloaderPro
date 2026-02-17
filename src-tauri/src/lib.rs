@@ -79,6 +79,13 @@ pub fn run() {
             commands::sidecar::get_ytdlp_version,
             commands::sidecar::update_ytdlp,
             commands::download::create_download_task,
+            commands::download::cancel_download_task,
+            commands::download::retry_download_task,
+            commands::download::get_queue_status,
+            commands::download::pause_download_task,
+            commands::download::resume_download_task,
+            commands::download::pause_queue,
+            commands::download::resume_queue,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

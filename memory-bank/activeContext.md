@@ -4,10 +4,20 @@
 Phase 2 is complete. Database layer is set up with SQLite + Sea-ORM. Moving to Phase 3: building the download engine.
 
 ## Recent Changes
-*   [x] **Phase 2 Complete:** SQLite database with Sea-ORM, 8 tables, migrations, entities, and Tauri managed state.
-*   [x] **Sidecar Manager (Phase 3.1):** `sidecar/` module with `get_version()`, `update_yt_dlp()`, `check_all()`.
-*   [x] **Queue System (Phase 3.4):** Implemented `DownloadQueue` with semaphore concurrency (limit 3) and `tokio::sync::Notify`.
+- **Download Engine Backend Completed**:
+    - Implemented `worker.rs` with cancellation, throttling, and stderr capture.
+    - Implemented `manager.rs` with priority queue, retry logic, and global/per-task pause/resume.
+    - Added 8 IPC commands for full download management.
+- **Documentation Updated**:
+    - Updated `09_queue_system.md` and `07_ipc_api_contract.md` to match implementation.
+
+## Current State
+- Backend is fully functional for downloads (add, cancel, pause, resume, retry, get status).
+- Tests passing for parser logic.
+- **Missing**: Frontend integration (React hooks/UI), Disk space checking, System tray.
 
 ## Next Steps
-1.  **Frontend Integration (Phase 4):** Connect React UI to `create_download_task` and listen for progress events.
-2.  **Active Downloads UI:** Visualize the queue and progress.
+1.  Implement Frontend Download Manager (React + Zustand).
+2.  Create "Add Download" modal with format selection.
+3.  Build "Downloads" page with active/queued/completed lists.
+4.  Add System Tray support for background behavior.

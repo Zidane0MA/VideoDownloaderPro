@@ -3,16 +3,28 @@ use crate::entity::download_task;
 use crate::AppState;
 use chrono::Utc;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::{Notify, Semaphore};
+use tokio::sync::{Mutex, Notify, Semaphore};
+use tokio_util::sync::CancellationToken;
+
+/// Base delay for exponential backoff on retries.
+const RETRY_BASE_DELAY_SECS: u64 = 5;
 
 #[derive(Clone)]
 pub struct DownloadQueue {
     app_handle: AppHandle,
     notify: Arc<Notify>,
     semaphore: Arc<Semaphore>,
+    /// Parent cancellation token — cancelling this stops the scheduler + all workers.
+    shutdown_token: CancellationToken,
+    /// Per-task cancellation tokens keyed by task ID.
+    task_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    /// Global pause flag — when true, the scheduler stops picking up new tasks.
+    paused: Arc<AtomicBool>,
 }
 
 impl DownloadQueue {
@@ -21,111 +33,284 @@ impl DownloadQueue {
             app_handle,
             notify: Arc::new(Notify::new()),
             semaphore: Arc::new(Semaphore::new(max_concurrency)),
+            shutdown_token: CancellationToken::new(),
+            task_tokens: Arc::new(Mutex::new(HashMap::new())),
+            paused: Arc::new(AtomicBool::new(false)),
         }
     }
 
+    /// Notify the scheduler that a new task is available.
     pub fn add_task(&self) {
         self.notify.notify_one();
+    }
+
+    /// Cancel a specific running task by ID.
+    pub async fn cancel_task(&self, task_id: &str) -> bool {
+        let tokens = self.task_tokens.lock().await;
+        if let Some(token) = tokens.get(task_id) {
+            token.cancel();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Trigger graceful shutdown of the scheduler and all workers.
+    pub fn shutdown(&self) {
+        tracing::info!("Shutting down download queue...");
+        self.shutdown_token.cancel();
+    }
+
+    /// Pause the queue — no new tasks will be picked up.
+    pub fn pause_queue(&self) {
+        tracing::info!("Queue paused");
+        self.paused.store(true, Ordering::SeqCst);
+    }
+
+    /// Resume the queue — scheduler resumes picking up tasks.
+    pub fn resume_queue(&self) {
+        tracing::info!("Queue resumed");
+        self.paused.store(false, Ordering::SeqCst);
+        self.notify.notify_one();
+    }
+
+    /// Check if the queue is globally paused.
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::SeqCst)
+    }
+
+    /// Recover tasks that were left in PROCESSING state (e.g. after a crash).
+    async fn recover_stale_tasks(&self) {
+        let db = &self.app_handle.state::<AppState>().db;
+
+        let stale_tasks = download_task::Entity::find()
+            .filter(download_task::Column::Status.eq("PROCESSING"))
+            .all(db)
+            .await
+            .unwrap_or_default();
+
+        if stale_tasks.is_empty() {
+            return;
+        }
+
+        tracing::warn!(
+            "Recovering {} stale PROCESSING tasks -> QUEUED",
+            stale_tasks.len()
+        );
+
+        for task in stale_tasks {
+            let _ = download_task::Entity::update(download_task::ActiveModel {
+                id: Set(task.id.clone()),
+                status: Set("QUEUED".to_string()),
+                ..Default::default()
+            })
+            .exec(db)
+            .await;
+        }
     }
 
     pub async fn start_scheduler(&self) {
         tracing::info!("Starting download queue scheduler...");
 
+        // Recover any stale tasks from previous session
+        self.recover_stale_tasks().await;
+
         loop {
-            // Wait for a slot to be available
-            let permit = match self.semaphore.clone().acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => {
-                    tracing::error!("Semaphore closed, stopping scheduler");
-                    break;
+            // Check for shutdown
+            if self.shutdown_token.is_cancelled() {
+                tracing::info!("Scheduler shutting down");
+                break;
+            }
+
+            // Check for global pause — wait until resumed
+            if self.paused.load(Ordering::SeqCst) {
+                tokio::select! {
+                    _ = self.notify.notified() => continue,
+                    _ = self.shutdown_token.cancelled() => break,
+                }
+            }
+
+            // Check for next queued task BEFORE acquiring a permit
+            // This avoids blocking semaphore permits when queue is empty
+            let task_model = match self.get_next_task().await {
+                Some(task) => task,
+                None => {
+                    // No task: wait for notification or shutdown
+                    tokio::select! {
+                        _ = self.notify.notified() => continue,
+                        _ = self.shutdown_token.cancelled() => break,
+                    }
                 }
             };
 
-            // Check for next queued task
-            match self.get_next_task().await {
-                Some(task_model) => {
-                    tracing::info!("Starting task: {}", task_model.id);
-                    let app = self.app_handle.clone();
-                    let task_id = task_model.id.clone();
-                    let url = task_model.url.clone();
-                    let db = &app.state::<AppState>().db;
-
-                    // Update status to PROCESSING
-                    let _ = download_task::Entity::update(download_task::ActiveModel {
-                        id: Set(task_id.clone()),
-                        status: Set("PROCESSING".to_string()),
-                        ..Default::default()
-                    })
-                    .exec(db)
-                    .await;
-
-                    // Spawn worker
-                    tokio::spawn(async move {
-                        // Ensure permit is held until task completes
-                        let _permit = permit;
-
-                        let worker = DownloadWorker::new(app.clone());
-                        let download_dir = app
-                            .path()
-                            .download_dir()
-                            .unwrap_or(PathBuf::from("downloads"));
-
-                        // Ensure dir exists
-                        if !download_dir.exists() {
-                            let _ = std::fs::create_dir_all(&download_dir);
+            // Now acquire a permit (waits if all slots are busy)
+            let permit = tokio::select! {
+                result = self.semaphore.clone().acquire_owned() => {
+                    match result {
+                        Ok(p) => p,
+                        Err(_) => {
+                            tracing::error!("Semaphore closed, stopping scheduler");
+                            break;
                         }
+                    }
+                }
+                _ = self.shutdown_token.cancelled() => break,
+            };
 
-                        let db = &app.state::<AppState>().db;
+            tracing::info!("Starting task: {}", task_model.id);
+            let app = self.app_handle.clone();
+            let task_id = task_model.id.clone();
+            let url = task_model.url.clone();
+            let format_selection = task_model.format_selection.clone();
+            let max_retries = task_model.max_retries;
+            let current_retries = task_model.retries;
+            let db = app.state::<AppState>().db.clone();
 
-                        match worker
-                            .execute_download(task_id.clone(), url, download_dir)
-                            .await
-                        {
-                            Ok(_) => {
-                                tracing::info!("Task completed: {}", task_id);
-                                let _ = download_task::Entity::update(download_task::ActiveModel {
-                                    id: Set(task_id.clone()),
-                                    status: Set("COMPLETED".to_string()),
-                                    completed_at: Set(Some(Utc::now())),
-                                    progress: Set(100.0),
-                                    ..Default::default()
-                                })
-                                .exec(db)
-                                .await;
+            // Create a child cancellation token for this specific task
+            let task_token = self.shutdown_token.child_token();
+            self.task_tokens
+                .lock()
+                .await
+                .insert(task_id.clone(), task_token.clone());
 
-                                let _ = app.emit("download-completed", &task_id);
-                            }
-                            Err(e) => {
-                                tracing::error!("Task failed: {} - {}", task_id, e);
-                                let _ = download_task::Entity::update(download_task::ActiveModel {
-                                    id: Set(task_id.clone()),
-                                    status: Set("FAILED".to_string()),
-                                    error_message: Set(Some(e)),
-                                    ..Default::default()
-                                })
-                                .exec(db)
-                                .await;
+            let task_tokens = self.task_tokens.clone();
+            let notify = self.notify.clone();
 
-                                let _ = app.emit("download-failed", &task_id);
-                            }
+            // Update status to PROCESSING with started_at timestamp
+            let _ = download_task::Entity::update(download_task::ActiveModel {
+                id: Set(task_id.clone()),
+                status: Set("PROCESSING".to_string()),
+                started_at: Set(Some(Utc::now())),
+                ..Default::default()
+            })
+            .exec(&db)
+            .await;
+
+            // Spawn worker
+            tokio::spawn(async move {
+                // Ensure permit is held until task completes
+                let _permit = permit;
+
+                let worker = DownloadWorker::new(app.clone());
+                let download_dir = app
+                    .path()
+                    .download_dir()
+                    .unwrap_or(PathBuf::from("downloads"));
+
+                // Ensure dir exists
+                if !download_dir.exists() {
+                    let _ = std::fs::create_dir_all(&download_dir);
+                }
+
+                match worker
+                    .execute_download(
+                        task_id.clone(),
+                        url,
+                        download_dir,
+                        format_selection,
+                        task_token,
+                        db.clone(),
+                    )
+                    .await
+                {
+                    Ok(_) => {
+                        tracing::info!("Task completed: {}", task_id);
+                        let _ = download_task::Entity::update(download_task::ActiveModel {
+                            id: Set(task_id.clone()),
+                            status: Set("COMPLETED".to_string()),
+                            completed_at: Set(Some(Utc::now())),
+                            progress: Set(100.0),
+                            ..Default::default()
+                        })
+                        .exec(&db)
+                        .await;
+
+                        let _ = app.emit("download-completed", &task_id);
+                    }
+                    Err(ref e) if e.contains("cancelled") || e.contains("paused") => {
+                        // Determine if this was a pause or cancel
+                        let new_status = if e.contains("paused") {
+                            "PAUSED"
+                        } else {
+                            "CANCELLED"
+                        };
+                        tracing::info!("Task {}: {}", new_status.to_lowercase(), task_id);
+                        let _ = download_task::Entity::update(download_task::ActiveModel {
+                            id: Set(task_id.clone()),
+                            status: Set(new_status.to_string()),
+                            error_message: Set(Some(e.clone())),
+                            ..Default::default()
+                        })
+                        .exec(&db)
+                        .await;
+
+                        let event = format!("download-{}", new_status.to_lowercase());
+                        let _ = app.emit(&event, &task_id);
+                    }
+                    Err(e) => {
+                        // Retry logic: check if we can retry
+                        let new_retries = current_retries + 1;
+                        if new_retries < max_retries {
+                            tracing::warn!(
+                                "Task {} failed (attempt {}/{}), requeueing: {}",
+                                task_id,
+                                new_retries,
+                                max_retries,
+                                e
+                            );
+
+                            let _ = download_task::Entity::update(download_task::ActiveModel {
+                                id: Set(task_id.clone()),
+                                status: Set("QUEUED".to_string()),
+                                retries: Set(new_retries),
+                                error_message: Set(Some(e)),
+                                ..Default::default()
+                            })
+                            .exec(&db)
+                            .await;
+
+                            // Exponential backoff before notifying scheduler
+                            let delay = RETRY_BASE_DELAY_SECS * 2u64.pow(new_retries as u32);
+                            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+
+                            // Wake scheduler to pick up retried task
+                            notify.notify_one();
+                        } else {
+                            tracing::error!(
+                                "Task {} permanently failed after {} retries: {}",
+                                task_id,
+                                max_retries,
+                                e
+                            );
+
+                            let _ = download_task::Entity::update(download_task::ActiveModel {
+                                id: Set(task_id.clone()),
+                                status: Set("FAILED".to_string()),
+                                retries: Set(new_retries),
+                                error_message: Set(Some(e)),
+                                ..Default::default()
+                            })
+                            .exec(&db)
+                            .await;
+
+                            let _ = app.emit("download-failed", &task_id);
                         }
-                    });
+                    }
                 }
-                None => {
-                    // No task found, release permit and wait for notification
-                    drop(permit);
-                    self.notify.notified().await;
-                }
-            }
+
+                // Cleanup task token
+                task_tokens.lock().await.remove(&task_id);
+            });
         }
     }
 
     async fn get_next_task(&self) -> Option<download_task::Model> {
         let db = &self.app_handle.state::<AppState>().db;
 
-        // Simple priority queue: FIFO, maybe add priority column later
+        // Priority queue: higher priority first, then FIFO by creation time
         download_task::Entity::find()
             .filter(download_task::Column::Status.eq("QUEUED"))
+            .order_by_desc(download_task::Column::Priority)
             .order_by_asc(download_task::Column::CreatedAt)
             .one(db)
             .await

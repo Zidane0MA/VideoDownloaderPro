@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -17,14 +18,7 @@ pub struct Parser {
 impl Parser {
     pub fn new() -> Self {
         // [download]  45.0% of 10.00MiB at  2.00MiB/s ETA 00:05
-        // Needs to be robust.
-        // Capture groups:
-        // 1. Percentage (f64)
-        // 2. Total Size (str) - optional
-        // 3. Speed (str) - optional
-        // 4. ETA (str) - optional
-
-        // Example: [download]  23.5% of ~1.23GiB at  5.67MiB/s ETA 03:45
+        // [download] 100% of 10.00MiB in 00:03
         let re = Regex::new(
             r"\[download\]\s+(\d+(?:\.\d+)?)%\s+of\s+(?:~)?(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)",
         )
@@ -41,11 +35,6 @@ impl Parser {
             let total_size_str = caps.get(2).map(|m| m.as_str().to_string());
             let speed = caps.get(3).map(|m| m.as_str().to_string());
             let eta = caps.get(4).map(|m| m.as_str().to_string());
-
-            // Helper to parse human readable size to bytes could be added here
-            // For now we just return the strings or None for bytes to be filled later/computed
-            // Actually, the contract asks for bytes. We should probably parse the size string.
-            // But let's start with parsing the structure and maybe adding a size parser helper.
 
             let total_bytes = total_size_str.as_ref().and_then(|s| parse_size(s));
             let downloaded_bytes = if let Some(total) = total_bytes {
@@ -67,25 +56,23 @@ impl Parser {
     }
 }
 
+/// Lazily compiled regex for parsing human-readable size strings.
+static SIZE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\d+(?:\.\d+)?)([KMGT]i?B)").unwrap());
+
 fn parse_size(size_str: &str) -> Option<u64> {
-    // 10.00MiB
-    let re = Regex::new(r"(\d+(?:\.\d+)?)([KMGT]i?B)").unwrap();
-    if let Some(caps) = re.captures(size_str) {
-        let value = caps.get(1)?.as_str().parse::<f64>().ok()?;
-        let unit = caps.get(2)?.as_str();
+    let caps = SIZE_REGEX.captures(size_str)?;
+    let value = caps.get(1)?.as_str().parse::<f64>().ok()?;
+    let unit = caps.get(2)?.as_str();
 
-        let multiplier = match unit {
-            "KiB" | "KB" => 1024.0,
-            "MiB" | "MB" => 1024.0 * 1024.0,
-            "GiB" | "GB" => 1024.0 * 1024.0 * 1024.0,
-            "TiB" | "TB" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
-            _ => 1.0,
-        };
+    let multiplier = match unit {
+        "KiB" | "KB" => 1024.0,
+        "MiB" | "MB" => 1024.0 * 1024.0,
+        "GiB" | "GB" => 1024.0 * 1024.0 * 1024.0,
+        "TiB" | "TB" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => 1.0,
+    };
 
-        Some((value * multiplier) as u64)
-    } else {
-        None
-    }
+    Some((value * multiplier) as u64)
 }
 
 #[cfg(test)]
@@ -109,8 +96,37 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_progress_with_tilde() {
+        let parser = Parser::new();
+        let line = "[download]  23.5% of ~1.23GiB at  5.67MiB/s ETA 03:45";
+        let update = parser.parse_line(line).unwrap();
+
+        assert_eq!(update.progress, 23.5);
+        assert_eq!(update.speed, Some("5.67MiB/s".to_string()));
+        assert_eq!(update.eta, Some("03:45".to_string()));
+    }
+
+    #[test]
+    fn test_parse_non_matching_line() {
+        let parser = Parser::new();
+        assert!(parser.parse_line("[info] Extracting URL").is_none());
+        assert!(parser.parse_line("").is_none());
+        assert!(parser
+            .parse_line("[download] Destination: video.mp4")
+            .is_none());
+    }
+
+    #[test]
     fn test_parse_size() {
         assert_eq!(parse_size("1.00KiB"), Some(1024));
         assert_eq!(parse_size("1.5MiB"), Some(1572864));
+        assert_eq!(parse_size("2.00GiB"), Some(2147483648));
+    }
+
+    #[test]
+    fn test_parse_size_edge_cases() {
+        assert_eq!(parse_size("0.00MiB"), Some(0));
+        assert!(parse_size("unknown").is_none());
+        assert!(parse_size("").is_none());
     }
 }
