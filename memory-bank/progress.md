@@ -13,13 +13,13 @@
 - [x] Sea-ORM Entities
 - [x] Basic Tests
 
-### Phase 3: Download Engine (Rust)
+### Phase 3: Download Engine (Rust) (Completed)
 - [x] Sidecar Manager (Update/Copy)
 - [x] Metadata Fetcher
 - [x] Download Worker
 - [x] Queue System
 
-### Phase 4: Frontend - Download Manager
+### Phase 4: Frontend - Download Manager (In Progress)
 - [ ] Active Downloads UI
 - [ ] URL Input & Preview
 - [ ] Settings Page

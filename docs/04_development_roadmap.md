@@ -43,7 +43,7 @@
     -   Unit tests for all Sea-ORM queries.
     -   Test cascade/soft-delete behavior.
 
-## Phase 3: The Download Engine (Rust)
+## Phase 3: The Download Engine (Rust) (Completed)
 **Goal:** yt-dlp command wrapper + download queue.
 
 1.  **Sidecar Manager:**

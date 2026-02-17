@@ -74,6 +74,26 @@ graph TD
 | `pause_queue` | Globally pauses the scheduler. |
 | `resume_queue` | Resumes the scheduler. |
 
+## User Controls & IPC Mapping
+
+The system exposes high-level controls via IPC that map directly to queue operations.
+
+### Pause / Resume
+- **Global Pause**: Freezes the scheduler. No new tasks are started. Running tasks continue until they finish or are individually paused.
+- **Task Pause**:
+  - **Running (`PROCESSING`)**: The `yt-dlp` process is killed (SIGTERM/SIGKILL). The state is saved as `PAUSED`.
+  - **Queued (`QUEUED`)**: State simply flips to `PAUSED`.
+- **Resume**:
+  - **Task**: State flips to `QUEUED`. When picked up, `yt-dlp` is spawned with `-c` (continue) to resume from the partial file.
+
+### Cancel
+- **Running**: Process is killed. State becomes `CANCELLED`. Partial files (`.part`) are deleted to clean up disk space.
+- **Queued**: State becomes `CANCELLED`.
+
+### Retry
+- **Manual Retry**: Resets a `FAILED` or `CANCELLED` task to `QUEUED` with a fresh retry counter.
+- **Auto-Retry**: Handled internally by the worker for transient errors (network, timeouts).
+
 ## Usage
 
 The queue is initialized in `lib.rs` and managed as Tauri state.

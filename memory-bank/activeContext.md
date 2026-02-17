@@ -1,23 +1,22 @@
 # Active Context
 
-**Phase 3: Download Engine (Rust)**
-Phase 2 is complete. Database layer is set up with SQLite + Sea-ORM. Moving to Phase 3: building the download engine.
+**Phase 4: Frontend - Download Manager UI**
+Phase 3 (Backend) is complete. Documentation is consolidated. Moving to Phase 4: building the visual interface for downloads.
 
 ## Recent Changes
-- **Download Engine Backend Completed**:
-    - Implemented `worker.rs` with cancellation, throttling, and stderr capture.
-    - Implemented `manager.rs` with priority queue, retry logic, and global/per-task pause/resume.
-    - Added 8 IPC commands for full download management.
-- **Documentation Updated**:
-    - Updated `09_queue_system.md` and `07_ipc_api_contract.md` to match implementation.
+- **Backend Complete**: Queue system, workers, and IPC fully operational.
+- **Documentation Consolidated**: `05_download_queue.md` removed, `09_queue_system.md` updated.
+- **Frontend Scaffolding**: `useDownloadManager` hook and `downloadStore` are already implemented and ready for UI integration.
 
 ## Current State
-- Backend is fully functional for downloads (add, cancel, pause, resume, retry, get status).
-- Tests passing for parser logic.
-- **Missing**: Frontend integration (React hooks/UI), Disk space checking, System tray.
+- Backend: Ready.
+- Frontend: Hooks ready. UI needs building.
 
 ## Next Steps
-1.  Implement Frontend Download Manager (React + Zustand).
-2.  Create "Add Download" modal with format selection.
-3.  Build "Downloads" page with active/queued/completed lists.
-4.  Add System Tray support for background behavior.
+1.  **UI Components**:
+    - `DownloadItem`: Individual task card.
+    - `DownloadList`: specific lists for active/completed.
+    - `UrlInput`: Add new downloads.
+2.  **Integration**:
+    - Connect components to `useDownloadManager`.
+    - Verify end-to-end download flow (URL -> Download -> Completion).
