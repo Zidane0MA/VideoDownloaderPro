@@ -3,7 +3,7 @@ use crate::sidecar::{get_binary_path, types::SidecarBinary};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::process::Stdio;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 

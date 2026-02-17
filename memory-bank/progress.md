@@ -17,7 +17,7 @@
 - [x] Sidecar Manager (Update/Copy)
 - [x] Metadata Fetcher
 - [x] Download Worker
-- [ ] Queue System
+- [x] Queue System
 
 ### Phase 4: Frontend - Download Manager
 - [ ] Active Downloads UI

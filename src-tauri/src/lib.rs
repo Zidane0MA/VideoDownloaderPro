@@ -4,6 +4,7 @@ pub mod download;
 mod entity;
 pub mod metadata;
 mod migration;
+pub mod queue;
 pub mod sidecar;
 
 use sea_orm::DatabaseConnection;
@@ -60,6 +61,15 @@ pub fn run() {
             });
 
             app.manage(AppState { db });
+
+            // Initialize Download Queue (Max 3 concurrent downloads)
+            let queue = queue::DownloadQueue::new(app.handle().clone(), 3);
+            app.manage(queue.clone());
+
+            // Start scheduler in background
+            tauri::async_runtime::spawn(async move {
+                queue.start_scheduler().await;
+            });
 
             Ok(())
         })
