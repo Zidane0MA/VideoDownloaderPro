@@ -1,4 +1,7 @@
 pub mod parser;
 pub mod worker;
 
-pub use worker::DownloadWorker;
+#[cfg(test)]
+mod cancel_test;
+
+pub use worker::{DownloadError, DownloadResult, DownloadWorker};

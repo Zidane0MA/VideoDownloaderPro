@@ -4,7 +4,8 @@ use serde::Serialize;
 use tauri::State;
 use uuid::Uuid;
 
-use crate::entity::download_task;
+use crate::entity::{download_task, post};
+use crate::metadata::models::YtDlpVideo;
 use crate::queue::DownloadQueue;
 use crate::AppState;
 
@@ -31,10 +32,24 @@ pub struct DownloadTaskInfo {
     pub completed_at: Option<String>,
     pub downloaded_bytes: Option<i64>,
     pub total_bytes: Option<i64>,
+    pub title: Option<String>,
+    pub thumbnail: Option<String>,
 }
 
-impl From<download_task::Model> for DownloadTaskInfo {
-    fn from(m: download_task::Model) -> Self {
+impl DownloadTaskInfo {
+    fn new(m: download_task::Model, p: Option<post::Model>) -> Self {
+        let (title, thumbnail) = if let Some(post) = p {
+            let title = post.title;
+            // Extract thumbnail from raw_json if available
+            let thumbnail = post.raw_json.and_then(|json| {
+                let video: Result<YtDlpVideo, _> = serde_json::from_str(&json);
+                video.ok().and_then(|v| v.best_thumbnail())
+            });
+            (title, thumbnail)
+        } else {
+            (None, None)
+        };
+
         Self {
             id: m.id,
             url: m.url,
@@ -51,6 +66,8 @@ impl From<download_task::Model> for DownloadTaskInfo {
             completed_at: m.completed_at.map(|t| t.to_rfc3339()),
             downloaded_bytes: m.downloaded_bytes,
             total_bytes: m.total_bytes,
+            title,
+            thumbnail,
         }
     }
 }
@@ -164,7 +181,8 @@ pub async fn get_queue_status(
     state: State<'_, AppState>,
     queue: State<'_, DownloadQueue>,
 ) -> Result<QueueStatusResponse, String> {
-    let tasks = download_task::Entity::find()
+    let tasks_with_posts = download_task::Entity::find()
+        .find_also_related(post::Entity)
         .order_by_desc(download_task::Column::CreatedAt)
         .all(&state.db)
         .await
@@ -172,7 +190,10 @@ pub async fn get_queue_status(
 
     Ok(QueueStatusResponse {
         is_paused: queue.is_paused(),
-        tasks: tasks.into_iter().map(DownloadTaskInfo::from).collect(),
+        tasks: tasks_with_posts
+            .into_iter()
+            .map(|(task, post)| DownloadTaskInfo::new(task, post))
+            .collect(),
     })
 }
 

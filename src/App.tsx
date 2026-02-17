@@ -1,12 +1,16 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Images, Settings, Zap, Plus } from "lucide-react";
+import { Download, Images, Settings as SettingsIcon, Zap, Plus } from "lucide-react";
 import { AddDownloadModal } from "./components/AddDownloadModal";
 import { DownloadsList } from "./components/DownloadsList";
+import { Settings } from "./components/Settings"; // Import the new component
+
+type View = 'downloads' | 'wall' | 'settings';
 
 function App() {
   const { t, i18n } = useTranslation();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [currentView, setCurrentView] = useState<View>('downloads');
 
   const toggleLanguage = () => {
     const newLang = i18n.language === "en" ? "es" : "en";
@@ -47,14 +51,15 @@ function App() {
       <nav className="border-b border-surface-700 px-6">
         <div className="flex gap-1">
           {[
-            { icon: Download, label: t("nav.downloads"), active: true },
-            { icon: Images, label: t("nav.wall"), active: false },
-            { icon: Settings, label: t("nav.settings"), active: false },
+            { id: 'downloads', icon: Download, label: t("nav.downloads") },
+            { id: 'wall', icon: Images, label: t("nav.wall") },
+            { id: 'settings', icon: SettingsIcon, label: t("nav.settings") },
           ].map((item) => (
             <button
-              key={item.label}
+              key={item.id}
+              onClick={() => setCurrentView(item.id as View)}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                item.active
+                currentView === item.id
                   ? "border-brand-500 text-brand-400"
                   : "border-transparent text-surface-200/60 hover:text-surface-100"
               }`}
@@ -68,26 +73,41 @@ function App() {
 
       {/* Main Content */}
       <main className="p-6">
-        {/* URL Input */}
-        <div className="max-w-2xl mx-auto">
-          <div className="relative group">
-            <button 
-              onClick={() => setIsAddModalOpen(true)}
-              className="w-full flex items-center justify-between px-5 py-4 bg-surface-800 border border-surface-700 rounded-2xl text-surface-200/40 hover:border-brand-500/50 hover:text-surface-200 transition-all cursor-text text-left"
-            >
-              <span>{t("placeholder.paste_url")}</span>
-              <div className="px-5 py-2.5 bg-brand-600 group-hover:bg-brand-500 text-white text-sm font-medium rounded-xl transition-colors shadow-lg shadow-brand-600/25 flex items-center gap-2">
-                <Plus size={18} />
-                {t("actions.download")}
+        {currentView === 'downloads' && (
+          <>
+            {/* URL Input */}
+            <div className="max-w-2xl mx-auto">
+              <div className="relative group">
+                <button 
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="w-full flex items-center justify-between px-5 py-4 bg-surface-800 border border-surface-700 rounded-2xl text-surface-200/40 hover:border-brand-500/50 hover:text-surface-200 transition-all cursor-text text-left"
+                >
+                  <span>{t("placeholder.paste_url")}</span>
+                  <div className="px-5 py-2.5 bg-brand-600 group-hover:bg-brand-500 text-white text-sm font-medium rounded-xl transition-colors shadow-lg shadow-brand-600/25 flex items-center gap-2">
+                    <Plus size={18} />
+                    {t("actions.download")}
+                  </div>
+                </button>
               </div>
-            </button>
-          </div>
-        </div>
+            </div>
 
-        {/* Downloads List */}
-        <div className="max-w-2xl mx-auto mt-12">
-          <DownloadsList />
-        </div>
+            {/* Downloads List */}
+            <div className="max-w-2xl mx-auto mt-12">
+              <DownloadsList />
+            </div>
+          </>
+        )}
+
+        {currentView === 'wall' && (
+          <div className="text-center py-20 text-surface-400">
+            <h2 className="text-xl font-semibold text-white mb-2">The Wall</h2>
+            <p>Gallery view coming soon...</p>
+          </div>
+        )}
+
+        {currentView === 'settings' && (
+          <Settings />
+        )}
       </main>
     </div>
   );

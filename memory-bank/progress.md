@@ -19,10 +19,10 @@
 - [x] Download Worker
 - [x] Queue System
 
-### Phase 4: Frontend - Download Manager (In Progress)
-- [ ] Active Downloads UI
-- [ ] URL Input & Preview
-- [ ] Settings Page
+### Phase 4: Frontend - Download Manager (Completed)
+- [x] Active Downloads UI
+- [x] URL Input & Preview
+- [x] Settings Page
 
 ### Phase 5: Frontend - Gallery (Wall)
 - [ ] Virtualized Grid

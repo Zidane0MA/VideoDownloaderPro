@@ -43,6 +43,9 @@ A progressive strategy to handle platform restrictions (YouTube, Instagram, etc.
 *   **Queue System:** A background worker pool in Rust manages concurrency (active/queued/paused).
 *   **State Machine:** Downloads move through strict states: `QUEUED` -> `FETCHING_META` -> `READY` -> `DOWNLOADING` -> `COMPLETED`.
 *   **Recovery:** Resumable downloads using `yt-dlp -c` and partial files.
+*   **Process Management (Windows):** Uses `taskkill /F /T /PID` to terminate the entire process tree (including child processes like `ffmpeg`) because standard `Child::kill()` leaves orphans. On non-Windows, falls back to standard kill.
+*   **File Size Handling:** For multi-stream downloads (video+audio), `yt-dlp` reports partial stream sizes. The system parses the final merged filename from `[Merger]` output and reads the actual file size from disk upon completion. The total size is updated in the DB to reflect the final file size.
+*   **Pause/Resume:** Implemented via `AtomicBool` for global queue pause and cancellation tokens for individual tasks.
 
 ### 5. Error Handling
 *   **Categorized Errors:** Network, Platform, Disk, Auth, internal.

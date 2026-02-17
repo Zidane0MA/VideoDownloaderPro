@@ -23,6 +23,8 @@ export interface DownloadTask {
   completed_at?: string;
   downloaded_bytes?: number;
   total_bytes?: number;
+  title?: string;
+  thumbnail?: string;
 }
 
 export interface CreateDownloadRequest {

@@ -11,9 +11,21 @@ pub struct ProgressUpdate {
     pub eta: Option<String>,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum ParseResult {
+    Progress(ProgressUpdate),
+    Filename(String),
+    /// The final filename after merging video+audio streams.
+    /// Parsed from: [Merger] Merging formats into "filename.ext"
+    MergedFilename(String),
+    Ignore,
+}
+
 pub struct Parser {
     progress_regex: Regex,
     completion_regex: Regex,
+    destination_regex: Regex,
+    merger_regex: Regex,
 }
 
 impl Parser {
@@ -28,17 +40,26 @@ impl Parser {
         let completion_re =
             Regex::new(r"\[download\]\s+100(?:\.0)?%\s+of\s+(?:~)?(\S+)\s+in\s+(\S+)").unwrap();
 
+        // [download] Destination: some_video.mp4
+        let dest_re = Regex::new(r"\[download\]\s+Destination:\s+(.+)").unwrap();
+
+        // [Merger] Merging formats into "video.mkv"
+        let merger_re =
+            Regex::new(r"\[Merger\]\s+Merging formats into\s+\x22([^\x22]+)\x22").unwrap();
+
         Self {
             progress_regex: re,
             completion_regex: completion_re,
+            destination_regex: dest_re,
+            merger_regex: merger_re,
         }
     }
 
-    pub fn parse_line(&self, line: &str) -> Option<ProgressUpdate> {
+    pub fn parse_line(&self, line: &str) -> ParseResult {
         // Try the normal progress line first
         if let Some(caps) = self.progress_regex.captures(line) {
-            let progress_str = caps.get(1)?.as_str();
-            let progress = progress_str.parse::<f64>().ok()?;
+            let progress_str = caps.get(1).map(|m| m.as_str()).unwrap_or("0");
+            let progress = progress_str.parse::<f64>().unwrap_or(0.0);
 
             let total_size_str = caps.get(2).map(|m| m.as_str().to_string());
             let speed = caps.get(3).map(|m| m.as_str().to_string());
@@ -51,7 +72,7 @@ impl Parser {
                 None
             };
 
-            Some(ProgressUpdate {
+            ParseResult::Progress(ProgressUpdate {
                 progress,
                 downloaded_bytes,
                 total_bytes,
@@ -63,15 +84,27 @@ impl Parser {
             let total_size_str = caps.get(1).map(|m| m.as_str().to_string());
             let total_bytes = total_size_str.as_ref().and_then(|s| parse_size(s));
 
-            Some(ProgressUpdate {
+            ParseResult::Progress(ProgressUpdate {
                 progress: 100.0,
                 downloaded_bytes: total_bytes, // 100% means all bytes downloaded
                 total_bytes,
                 speed: None,
                 eta: None,
             })
+        } else if let Some(caps) = self.merger_regex.captures(line) {
+            let filename = caps
+                .get(1)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+            ParseResult::MergedFilename(filename)
+        } else if let Some(caps) = self.destination_regex.captures(line) {
+            let filename = caps
+                .get(1)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+            ParseResult::Filename(filename)
         } else {
-            None
+            ParseResult::Ignore
         }
     }
 }
@@ -103,37 +136,61 @@ mod tests {
     fn test_parse_progress() {
         let parser = Parser::new();
         let line = "[download]  45.0% of 10.00MiB at  2.00MiB/s ETA 00:05";
-        let update = parser.parse_line(line).unwrap();
+        let result = parser.parse_line(line);
 
-        assert_eq!(update.progress, 45.0);
-        assert_eq!(update.speed, Some("2.00MiB/s".to_string()));
-        assert_eq!(update.eta, Some("00:05".to_string()));
+        if let ParseResult::Progress(update) = result {
+            assert_eq!(update.progress, 45.0);
+            assert_eq!(update.speed, Some("2.00MiB/s".to_string()));
+            assert_eq!(update.eta, Some("00:05".to_string()));
 
-        // 10 MiB = 10 * 1024 * 1024 = 10485760 bytes
-        // 45% of 10 MiB = 4,718,592
-        assert_eq!(update.total_bytes, Some(10485760));
-        assert_eq!(update.downloaded_bytes, Some(4718592));
+            // 10 MiB = 10 * 1024 * 1024 = 10485760 bytes
+            // 45% of 10 MiB = 4,718,592
+            assert_eq!(update.total_bytes, Some(10485760));
+            assert_eq!(update.downloaded_bytes, Some(4718592));
+        } else {
+            panic!("Expected Progress, got {:?}", result);
+        }
     }
 
     #[test]
     fn test_parse_progress_with_tilde() {
         let parser = Parser::new();
         let line = "[download]  23.5% of ~1.23GiB at  5.67MiB/s ETA 03:45";
-        let update = parser.parse_line(line).unwrap();
+        let result = parser.parse_line(line);
 
-        assert_eq!(update.progress, 23.5);
-        assert_eq!(update.speed, Some("5.67MiB/s".to_string()));
-        assert_eq!(update.eta, Some("03:45".to_string()));
+        if let ParseResult::Progress(update) = result {
+            assert_eq!(update.progress, 23.5);
+            assert_eq!(update.speed, Some("5.67MiB/s".to_string()));
+            assert_eq!(update.eta, Some("03:45".to_string()));
+        } else {
+            panic!("Expected Progress, got {:?}", result);
+        }
     }
 
     #[test]
     fn test_parse_non_matching_line() {
         let parser = Parser::new();
-        assert!(parser.parse_line("[info] Extracting URL").is_none());
-        assert!(parser.parse_line("").is_none());
-        assert!(parser
-            .parse_line("[download] Destination: video.mp4")
-            .is_none());
+        assert_eq!(
+            parser.parse_line("[info] Extracting URL"),
+            ParseResult::Ignore
+        );
+        assert_eq!(parser.parse_line(""), ParseResult::Ignore);
+    }
+
+    #[test]
+    fn test_parse_filename() {
+        let parser = Parser::new();
+        let line = "[download] Destination: video.mp4";
+        assert_eq!(
+            parser.parse_line(line),
+            ParseResult::Filename("video.mp4".to_string())
+        );
+
+        let line_with_path = "[download] Destination: C:\\Downloads\\video.mp4";
+        assert_eq!(
+            parser.parse_line(line_with_path),
+            ParseResult::Filename("C:\\Downloads\\video.mp4".to_string())
+        );
     }
 
     #[test]
@@ -154,23 +211,51 @@ mod tests {
     fn test_parse_completion_line() {
         let parser = Parser::new();
         let line = "[download] 100% of 10.00MiB in 00:03";
-        let update = parser.parse_line(line).unwrap();
+        let result = parser.parse_line(line);
 
-        assert_eq!(update.progress, 100.0);
-        assert_eq!(update.total_bytes, Some(10485760));
-        assert_eq!(update.downloaded_bytes, Some(10485760));
-        assert_eq!(update.speed, None);
-        assert_eq!(update.eta, None);
+        if let ParseResult::Progress(update) = result {
+            assert_eq!(update.progress, 100.0);
+            assert_eq!(update.total_bytes, Some(10485760));
+            assert_eq!(update.downloaded_bytes, Some(10485760));
+            assert_eq!(update.speed, None);
+            assert_eq!(update.eta, None);
+        } else {
+            panic!("Expected Progress, got {:?}", result);
+        }
     }
 
     #[test]
     fn test_parse_completion_line_with_decimal() {
         let parser = Parser::new();
         let line = "[download] 100.0% of 5.50GiB in 01:23:45";
-        let update = parser.parse_line(line).unwrap();
+        let result = parser.parse_line(line);
 
-        assert_eq!(update.progress, 100.0);
-        assert!(update.total_bytes.is_some());
-        assert_eq!(update.downloaded_bytes, update.total_bytes);
+        if let ParseResult::Progress(update) = result {
+            assert_eq!(update.progress, 100.0);
+            assert!(update.total_bytes.is_some());
+            assert_eq!(update.downloaded_bytes, update.total_bytes);
+        } else {
+            panic!("Expected Progress, got {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_parse_merger_line() {
+        let parser = Parser::new();
+        let line = "[Merger] Merging formats into \"My Cool Video.mkv\"";
+        assert_eq!(
+            parser.parse_line(line),
+            ParseResult::MergedFilename("My Cool Video.mkv".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_merger_line_with_path() {
+        let parser = Parser::new();
+        let line = "[Merger] Merging formats into \"C:\\Downloads\\video.webm\"";
+        assert_eq!(
+            parser.parse_line(line),
+            ParseResult::MergedFilename("C:\\Downloads\\video.webm".to_string())
+        );
     }
 }

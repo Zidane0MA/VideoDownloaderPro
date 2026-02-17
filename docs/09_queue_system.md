@@ -43,6 +43,8 @@ graph TD
 - **Output template**: Uses `--output "%(title)s.%(ext)s"`.
 - **Progress throttling**: Emits events at most every 500ms to avoid IPC flooding.
 - **DB writes**: Persists `progress`, `speed`, `eta` using `update_many` to avoid redundant `SELECT` queries.
+- **Robust Termination**: On Windows, uses `taskkill /F /T /PID` to ensure the entire process tree (including `ffmpeg`) is killed.
+- **Merge Handling**: Parses `[Merger]` output to identify the final filename and reads the actual file size from disk to ensure accuracy.
 
 ### 3. Task States (`download_task` table)
 - `QUEUED`: Waiting for a slot.
@@ -59,14 +61,14 @@ graph TD
 
 ### 5. Pause / Resume
 - **Global pause**: `AtomicBool` flag checked by the scheduler — stops picking up new tasks.
-- **Per-task pause**: PROCESSING tasks are cancelled (yt-dlp killed) and marked `PAUSED`. QUEUED tasks are set directly to `PAUSED`.
+- **Per-task pause**: ON WINDOWS: Uses `taskkill /F /T` to terminate the process tree. ON LINUX/MAC: Standard `kill()`. State is saved as `PAUSED`.
 - **Resume**: PAUSED tasks are set back to `QUEUED`. yt-dlp `-c` flag enables native partial download resumption.
 
 ### 6. IPC Commands
 | Command | Description |
 |---------|-------------|
 | `create_download_task` | Creates a DB entry with `QUEUED` status and notifies the scheduler. |
-| `cancel_download_task` | Cancels a running task (kills yt-dlp) or marks a queued task as `CANCELLED`. |
+| `cancel_download_task` | Cancels a running task (kills process tree) or marks a queued task as `CANCELLED`. |
 | `retry_download_task` | Resets a `FAILED` or `CANCELLED` task to `QUEUED` with retries cleared. |
 | `get_queue_status` | Returns all tasks + global `is_paused` flag. |
 | `pause_download_task` | Pauses a single QUEUED or PROCESSING task. |
@@ -81,13 +83,13 @@ The system exposes high-level controls via IPC that map directly to queue operat
 ### Pause / Resume
 - **Global Pause**: Freezes the scheduler. No new tasks are started. Running tasks continue until they finish or are individually paused.
 - **Task Pause**:
-  - **Running (`PROCESSING`)**: The `yt-dlp` process is killed (SIGTERM/SIGKILL). The state is saved as `PAUSED`.
+  - **Running (`PROCESSING`)**: The process tree is terminated (Windows: `taskkill /F /T`). The state is saved as `PAUSED`.
   - **Queued (`QUEUED`)**: State simply flips to `PAUSED`.
 - **Resume**:
   - **Task**: State flips to `QUEUED`. When picked up, `yt-dlp` is spawned with `-c` (continue) to resume from the partial file.
 
 ### Cancel
-- **Running**: Process is killed. State becomes `CANCELLED`. Partial files (`.part`) are deleted to clean up disk space.
+- **Running**: Process tree is terminated. State becomes `CANCELLED`. Partial files (`.part`) and any merged files are deleted to clean up.
 - **Queued**: State becomes `CANCELLED`.
 
 ### Retry

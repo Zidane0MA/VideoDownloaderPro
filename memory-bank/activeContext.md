@@ -4,19 +4,18 @@
 Phase 3 (Backend) is complete. Documentation is consolidated. Moving to Phase 4: building the visual interface for downloads.
 
 ## Recent Changes
+- **Frontend UI Implemented**: Created `Settings` page, implemented Navigation (`App.tsx`), and integrated `DownloadsList` / `AddDownloadModal`.
 - **Backend Complete**: Queue system, workers, and IPC fully operational.
-- **Documentation Consolidated**: `05_download_queue.md` removed, `09_queue_system.md` updated.
-- **Frontend Scaffolding**: `useDownloadManager` hook and `downloadStore` are already implemented and ready for UI integration.
+- **Robustness Improvements**: Fixed pause/cancel, file size accuracy, and global queue control.
 
 ## Current State
-- Backend: Ready.
-- Frontend: Hooks ready. UI needs building.
+- Backend: Ready and robust.
+- Frontend: Download Manager UI and Settings page implemented. Navigation active.
 
 ## Next Steps
-1.  **UI Components**:
-    - `DownloadItem`: Individual task card.
-    - `DownloadList`: specific lists for active/completed.
-    - `UrlInput`: Add new downloads.
-2.  **Integration**:
-    - Connect components to `useDownloadManager`.
-    - Verify end-to-end download flow (URL -> Download -> Completion).
+1.  **Verification**:
+    -   Perform end-to-end download test (Add URL -> Download -> Pause -> Resume -> Complete).
+2.  **Phase 5: Frontend - Gallery (Wall)**:
+    -   Implement `VirtualGrid` for performance.
+    -   Build `PostCard` to display downloaded media.
+    -   Implement Media Viewer (Lightbox/Player).

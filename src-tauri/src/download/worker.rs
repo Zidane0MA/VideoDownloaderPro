@@ -1,5 +1,6 @@
 use super::parser::Parser;
 use crate::entity::download_task;
+use crate::metadata::{fetcher, store};
 use crate::sidecar::{get_binary_path, types::SidecarBinary};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use serde::Serialize;
@@ -15,6 +16,43 @@ use tokio_util::sync::CancellationToken;
 /// Minimum interval between progress emissions to avoid flooding the IPC bridge.
 const PROGRESS_THROTTLE: Duration = Duration::from_millis(500);
 
+/// Kill the entire process tree rooted at the given child process.
+/// On Windows, `child.kill()` only kills the immediate process, leaving
+/// subprocesses (e.g. ffmpeg spawned by yt-dlp) running as orphans.
+/// This function uses `taskkill /F /T /PID` to kill the full tree.
+#[cfg(windows)]
+async fn kill_process_tree(child: &mut tokio::process::Child) {
+    if let Some(pid) = child.id() {
+        tracing::info!("Killing process tree for PID {}", pid);
+        let output = tokio::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .output()
+            .await;
+        match output {
+            Ok(o) => {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                tracing::info!(
+                    "taskkill PID={}: stdout='{}' stderr='{}'",
+                    pid,
+                    stdout.trim(),
+                    stderr.trim()
+                );
+            }
+            Err(e) => {
+                tracing::error!("taskkill failed for PID {}: {}", pid, e);
+            }
+        }
+    } else {
+        tracing::warn!("Cannot kill process tree: no PID available");
+    }
+}
+
+#[cfg(not(windows))]
+async fn kill_process_tree(child: &mut tokio::process::Child) {
+    let _ = child.kill().await;
+}
+
 #[derive(Clone, Serialize, Debug)]
 pub struct DownloadProgressPayload {
     pub task_id: String,
@@ -27,6 +65,28 @@ pub struct DownloadProgressPayload {
 
 pub struct DownloadWorker {
     app: AppHandle,
+}
+
+#[derive(Debug)]
+pub struct DownloadResult {
+    pub total_bytes: Option<u64>,
+    pub downloaded_bytes: u64,
+    pub filename: Option<String>,
+}
+
+#[derive(Debug)]
+pub enum DownloadError {
+    Cancelled {
+        total_bytes: Option<u64>,
+        downloaded_bytes: u64,
+        filename: Option<String>,
+    },
+    Failed {
+        message: String,
+        total_bytes: Option<u64>,
+        downloaded_bytes: u64,
+        filename: Option<String>,
+    },
 }
 
 impl DownloadWorker {
@@ -42,9 +102,82 @@ impl DownloadWorker {
         format_selection: Option<String>,
         cancel_token: CancellationToken,
         db: DatabaseConnection,
-    ) -> Result<(Option<u64>, u64), String> {
-        let binary_path =
-            get_binary_path(&self.app, SidecarBinary::YtDlp).map_err(|e| e.to_string())?;
+    ) -> Result<DownloadResult, DownloadError> {
+        let binary_path = get_binary_path(&self.app, SidecarBinary::YtDlp).map_err(|e| {
+            DownloadError::Failed {
+                message: e.to_string(),
+                total_bytes: None,
+                downloaded_bytes: 0,
+                filename: None,
+            }
+        })?;
+
+        // --- Metadata Fetch Step ---
+        // Check if task already has a linked Post. If not, fetch and save metadata first.
+        let task = download_task::Entity::find_by_id(&task_id)
+            .one(&db)
+            .await
+            .map_err(|e| DownloadError::Failed {
+                message: format!("DB error: {}", e),
+                total_bytes: None,
+                downloaded_bytes: 0,
+                filename: None,
+            })?
+            .ok_or(DownloadError::Failed {
+                message: "Task not found".to_string(),
+                total_bytes: None,
+                downloaded_bytes: 0,
+                filename: None,
+            })?;
+
+        if task.post_id.is_none() {
+            tracing::info!("Task {} has no metadata (post_id), fetching...", task_id);
+            // Notify UI we are fetching metadata (optional, maybe via a status update?)
+            // For now, we just log it.
+
+            match fetcher::fetch_metadata(&self.app, &url).await {
+                Ok(metadata) => {
+                    match store::save_metadata(&db, metadata).await {
+                        Ok(post_id) => {
+                            tracing::info!(
+                                "Metadata saved for task {}, linked to post {}",
+                                task_id,
+                                post_id
+                            );
+                            // Link post_id to task
+                            let _ = download_task::Entity::update(download_task::ActiveModel {
+                                id: Set(task_id.clone()),
+                                post_id: Set(Some(post_id)),
+                                ..Default::default()
+                            })
+                            .exec(&db)
+                            .await
+                            .map_err(|e| tracing::error!("Failed to update task post_id: {}", e));
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to save metadata for task {}: {}", task_id, e);
+                            return Err(DownloadError::Failed {
+                                message: format!("Metadata save error: {}", e),
+                                total_bytes: None,
+                                downloaded_bytes: 0,
+                                filename: None,
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to fetch metadata for task {}: {}", task_id, e);
+                    // Decide: Fail the download if metadata fails?
+                    // Yes, because we need the Post record for the UI/History.
+                    return Err(DownloadError::Failed {
+                        message: format!("Metadata fetch error: {}", e),
+                        total_bytes: None,
+                        downloaded_bytes: 0,
+                        filename: None,
+                    });
+                }
+            }
+        }
 
         let mut cmd = Command::new(binary_path);
 
@@ -71,7 +204,6 @@ impl DownloadWorker {
         // Windows: hide console window
         #[cfg(windows)]
         {
-            use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x08000000;
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
@@ -79,125 +211,184 @@ impl DownloadWorker {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+        let mut child = cmd.spawn().map_err(|e| DownloadError::Failed {
+            message: format!("Failed to spawn yt-dlp: {}", e),
+            total_bytes: None,
+            downloaded_bytes: 0,
+            filename: None,
+        })?;
 
-        let stdout = child.stdout.take().ok_or("Failed to open stdout")?;
-        let stderr = child.stderr.take().ok_or("Failed to open stderr")?;
+        let stdout = child.stdout.take().ok_or(DownloadError::Failed {
+            message: "Failed to open stdout".to_string(),
+            total_bytes: None,
+            downloaded_bytes: 0,
+            filename: None,
+        })?;
+        let stderr = child.stderr.take().ok_or(DownloadError::Failed {
+            message: "Failed to open stderr".to_string(),
+            total_bytes: None,
+            downloaded_bytes: 0,
+            filename: None,
+        })?;
 
         // --- Stderr capture task ---
         let stderr_lines = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
         let stderr_lines_clone = stderr_lines.clone();
         let stderr_handle = tokio::spawn(async move {
             let mut reader = BufReader::new(stderr);
-            let mut line = String::new();
-            while let Ok(n) = reader.read_line(&mut line).await {
+            let mut buf = Vec::new();
+            while let Ok(n) = reader.read_until(b'\n', &mut buf).await {
                 if n == 0 {
                     break;
                 }
+                let line = String::from_utf8_lossy(&buf);
                 let trimmed = line.trim().to_string();
                 if !trimmed.is_empty() {
                     tracing::warn!(target: "yt-dlp:stderr", "{}", trimmed);
                     stderr_lines_clone.lock().await.push(trimmed);
                 }
-                line.clear();
+                buf.clear();
             }
         });
 
         // --- Stdout progress reading with cancellation ---
         let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
+        let mut buf = Vec::new();
         let parser = Parser::new();
         let mut last_emit = Instant::now();
 
         // Create explicit variables to track stats across the loop
         let mut final_total_bytes = None;
         let mut final_downloaded_bytes = 0;
+        let mut final_filename = None;
+        // The merged filename is the ACTUAL output file after yt-dlp merges
+        // video+audio streams. It differs from the intermediate Destination filenames.
+        let mut merged_filename: Option<String> = None;
         let mut was_killed = false;
 
-        let read_result: Result<(), String> = loop {
+        let read_result: Result<(), DownloadError> = loop {
             // Check cancellation BEFORE entering select! to guarantee
-            // cancel wins even if read_line already returned data.
+            // cancel wins even if read_until already returned data.
             if cancel_token.is_cancelled() {
                 tracing::info!("Download cancelled for task: {}", task_id);
-                let _ = child.kill().await;
+                kill_process_tree(&mut child).await;
                 let _ = child.wait().await; // Reap process to avoid zombies on Windows
                 was_killed = true;
-                break Err("Download cancelled by user".to_string());
+                break Err(DownloadError::Cancelled {
+                    total_bytes: final_total_bytes,
+                    downloaded_bytes: final_downloaded_bytes,
+                    filename: final_filename.clone(),
+                });
             }
 
             tokio::select! {
-                biased; // Prefer cancellation over read_line
+                biased; // Prefer cancellation over read_until
 
                 // Cancellation branch
                 _ = cancel_token.cancelled() => {
                     tracing::info!("Download cancelled for task: {}", task_id);
-                    let _ = child.kill().await;
+                    kill_process_tree(&mut child).await;
                     let _ = child.wait().await;
                     was_killed = true;
-                    break Err("Download cancelled by user".to_string());
+                    break Err(DownloadError::Cancelled {
+                        total_bytes: final_total_bytes,
+                        downloaded_bytes: final_downloaded_bytes,
+                        filename: final_filename.clone(),
+                    });
                 }
-                // Read next line
-                result = reader.read_line(&mut line) => {
+                // Read next line (using read_until for robust UTF-8 handling)
+                result = reader.read_until(b'\n', &mut buf) => {
                     match result {
                         Ok(0) => break Ok(()), // EOF
                         Ok(_) => {
-                            if let Some(progress) = parser.parse_line(&line) {
-                                // Update final stats
-                                final_total_bytes = progress.total_bytes;
-                                if let Some(bytes) = progress.downloaded_bytes {
-                                    final_downloaded_bytes = bytes;
+                            let line = String::from_utf8_lossy(&buf);
+                            // Import ParseResult
+                            use super::parser::ParseResult;
+
+                            match parser.parse_line(&line) {
+                                ParseResult::Progress(progress) => {
+                                    // Update final stats (accumulate if present)
+                                    if let Some(bytes) = progress.total_bytes {
+                                        final_total_bytes = Some(bytes);
+                                    }
+                                    if let Some(bytes) = progress.downloaded_bytes {
+                                        final_downloaded_bytes = bytes;
+                                    }
+
+                                    let now = Instant::now();
+                                    if now.duration_since(last_emit) >= PROGRESS_THROTTLE
+                                        || progress.progress >= 100.0
+                                    {
+                                        last_emit = now;
+
+                                        let payload = DownloadProgressPayload {
+                                            task_id: task_id.clone(),
+                                            progress: progress.progress,
+                                            speed: progress.speed.clone().unwrap_or_default(),
+                                            eta: progress.eta.clone().unwrap_or_default(),
+                                            downloaded_bytes: final_downloaded_bytes,
+                                            total_bytes: final_total_bytes, // Use accumulated value
+                                        };
+
+                                        let _ = self.app.emit("download-progress", &payload);
+
+                                        // Persist progress to DB (throttled)
+                                        // Use update_many to avoid implicit SELECT after UPDATE
+                                        let mut update = download_task::Entity::update_many()
+                                            .col_expr(
+                                                download_task::Column::Progress,
+                                                sea_orm::sea_query::Expr::value(progress.progress as f32),
+                                            )
+                                            .col_expr(
+                                                download_task::Column::Speed,
+                                                sea_orm::sea_query::Expr::value(progress.speed.clone()),
+                                            )
+                                            .col_expr(
+                                                download_task::Column::Eta,
+                                                sea_orm::sea_query::Expr::value(progress.eta.clone()),
+                                            );
+
+                                        // Only update downloaded_bytes if we have a valid value
+                                        // (parser returns None if total_bytes is unknown, but we might track it manually)
+                                        if progress.downloaded_bytes.is_some() {
+                                            update = update.col_expr(
+                                                download_task::Column::DownloadedBytes,
+                                                sea_orm::sea_query::Expr::value(progress.downloaded_bytes),
+                                            );
+                                        }
+
+                                        // Only update total_bytes if we have a new value.
+                                        // This prevents overwriting a known size with NULL if yt-dlp sends an update without size.
+                                        if let Some(total) = progress.total_bytes {
+                                            update = update.col_expr(
+                                                download_task::Column::TotalBytes,
+                                                sea_orm::sea_query::Expr::value(total),
+                                            );
+                                        }
+
+                                        let _ = update
+                                            .filter(download_task::Column::Id.eq(task_id.clone()))
+                                            .exec(&db)
+                                            .await;
+                                    }
                                 }
-
-                                let now = Instant::now();
-                                if now.duration_since(last_emit) >= PROGRESS_THROTTLE
-                                    || progress.progress >= 100.0
-                                {
-                                    last_emit = now;
-
-                                    let payload = DownloadProgressPayload {
-                                        task_id: task_id.clone(),
-                                        progress: progress.progress,
-                                        speed: progress.speed.clone().unwrap_or_default(),
-                                        eta: progress.eta.clone().unwrap_or_default(),
-                                        downloaded_bytes: progress.downloaded_bytes.unwrap_or(0),
-                                        total_bytes: progress.total_bytes,
-                                    };
-
-                                    let _ = self.app.emit("download-progress", &payload);
-
-                                    // Persist progress to DB (throttled)
-                                    // Use update_many to avoid implicit SELECT after UPDATE
-                                    let _ = download_task::Entity::update_many()
-                                        .col_expr(
-                                            download_task::Column::Progress,
-                                            sea_orm::sea_query::Expr::value(progress.progress as f32),
-                                        )
-                                        .col_expr(
-                                            download_task::Column::Speed,
-                                            sea_orm::sea_query::Expr::value(progress.speed.clone()),
-                                        )
-                                        .col_expr(
-                                            download_task::Column::Eta,
-                                            sea_orm::sea_query::Expr::value(progress.eta.clone()),
-                                        )
-                                        .col_expr(
-                                            download_task::Column::DownloadedBytes,
-                                            sea_orm::sea_query::Expr::value(progress.downloaded_bytes),
-                                        )
-                                        .col_expr(
-                                            download_task::Column::TotalBytes,
-                                            sea_orm::sea_query::Expr::value(progress.total_bytes),
-                                        )
-                                        .filter(download_task::Column::Id.eq(task_id.clone()))
-                                        .exec(&db)
-                                        .await;
+                                ParseResult::Filename(name) => {
+                                    final_filename = Some(name);
                                 }
+                                ParseResult::MergedFilename(name) => {
+                                    tracing::info!("Merged output file: {}", name);
+                                    merged_filename = Some(name);
+                                }
+                                ParseResult::Ignore => {}
                             }
-                            line.clear();
+                            buf.clear();
                         }
-                        Err(e) => break Err(format!("Failed to read stdout: {}", e)),
+                        Err(e) => break Err(DownloadError::Failed {
+                            message: format!("Failed to read stdout: {}", e),
+                            total_bytes: final_total_bytes,
+                            downloaded_bytes: final_downloaded_bytes,
+                            filename: final_filename.clone(),
+                        }),
                     }
                 }
             }
@@ -212,13 +403,51 @@ impl DownloadWorker {
         // Wait for process to finish (skip if already killed & waited)
         let status = if was_killed {
             // Process already reaped in the kill path
-            return Ok((final_total_bytes, final_downloaded_bytes));
+            return Err(DownloadError::Cancelled {
+                total_bytes: final_total_bytes,
+                downloaded_bytes: final_downloaded_bytes,
+                filename: final_filename.clone(),
+            });
         } else {
-            child.wait().await.map_err(|e| e.to_string())?
+            child.wait().await.map_err(|e| DownloadError::Failed {
+                message: e.to_string(),
+                total_bytes: final_total_bytes,
+                downloaded_bytes: final_downloaded_bytes,
+                filename: final_filename.clone(),
+            })?
         };
 
         if status.success() {
-            Ok((final_total_bytes, final_downloaded_bytes))
+            // Prefer merged filename (final output) over intermediate destination filename.
+            let result_filename = merged_filename.or(final_filename);
+
+            // Read ACTUAL file size from disk — yt-dlp progress only reports
+            // per-stream sizes, so for multi-stream downloads (video+audio)
+            // the parsed total_bytes is just the last stream's size.
+            let actual_file_size = result_filename.as_ref().and_then(|fname| {
+                let file_path = output_dir.join(fname);
+                tracing::info!("Reading file size from: {:?}", file_path);
+                match std::fs::metadata(&file_path) {
+                    Ok(m) => {
+                        let size = m.len();
+                        tracing::info!("Actual file size on disk: {} bytes", size);
+                        Some(size)
+                    }
+                    Err(e) => {
+                        tracing::warn!("Could not read file metadata: {}", e);
+                        None
+                    }
+                }
+            });
+
+            // Use disk size if available, never fall back to parsed progress bytes
+            let total = actual_file_size.unwrap_or(0);
+
+            Ok(DownloadResult {
+                total_bytes: actual_file_size,
+                downloaded_bytes: total,
+                filename: result_filename,
+            })
         } else {
             // Build error message from stderr
             let stderr_output = stderr_lines.lock().await;
@@ -237,7 +466,36 @@ impl DownloadWorker {
                     .collect();
                 tail.join("\n")
             };
-            Err(error_detail)
+            Err(DownloadError::Failed {
+                message: error_detail,
+                total_bytes: final_total_bytes,
+                downloaded_bytes: final_downloaded_bytes,
+                filename: final_filename.clone(),
+            })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_robust_utf8_conversion() {
+        // A sequence of bytes that is NOT valid UTF-8
+        let invalid_utf8 = vec![0, 159, 146, 150];
+
+        // This is what we now do in worker.rs
+        let lossy_string = String::from_utf8_lossy(&invalid_utf8);
+
+        // It should NOT panic and should provide some representation
+        assert!(!lossy_string.is_empty());
+    }
+
+    #[test]
+    fn test_mixed_output_parsing() {
+        let mixed_bytes = b"normal text \xEF\xBF\xBD damaged text\n";
+        let line = String::from_utf8_lossy(mixed_bytes);
+        assert!(line.contains("normal text"));
+        assert!(line.contains("damaged text"));
     }
 }

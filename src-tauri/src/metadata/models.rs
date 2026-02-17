@@ -78,3 +78,16 @@ pub struct YtDlpPlaylist {
     pub uploader_id: Option<String>,
     pub webpage_url: Option<String>,
 }
+
+impl YtDlpVideo {
+    pub fn best_thumbnail(&self) -> Option<String> {
+        self.thumbnails
+            .as_ref()?
+            .iter()
+            // Prefer thumbnails with ID (often '0' or 'maxresdefault') or largest dimensions
+            .max_by_key(|t| t.width.unwrap_or(0) * t.height.unwrap_or(0))
+            .map(|t| t.url.clone())
+            // Fallback to last one if no dimensions (yt-dlp conventions)
+            .or_else(|| self.thumbnails.as_ref()?.last().map(|t| t.url.clone()))
+    }
+}

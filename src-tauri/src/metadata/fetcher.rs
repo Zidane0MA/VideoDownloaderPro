@@ -1,31 +1,35 @@
 use super::models::YtDlpOutput;
 use super::MetadataError;
-use crate::sidecar::types::SidecarBinary;
+use crate::sidecar::{get_binary_path, types::SidecarBinary};
 use tauri::AppHandle;
-use tauri_plugin_shell::ShellExt;
+use tokio::process::Command;
 
 /// Runs `yt-dlp --dump-single-json --flat-playlist <url>` and returns the parsed metadata.
 pub async fn fetch_metadata(app: &AppHandle, url: &str) -> Result<YtDlpOutput, MetadataError> {
     let sidecar = SidecarBinary::YtDlp;
+    let binary_path =
+        get_binary_path(app, sidecar).map_err(|e| MetadataError::Sidecar(e.to_string()))?;
 
     // Construct arguments
     // --dump-single-json: Ensure we get a single JSON object (Video or Playlist)
     // --flat-playlist: Don't recurse into playlist items (fast)
     // --no-warnings: Keep stderr clean
-    let args = vec![
-        "--dump-single-json",
-        "--flat-playlist",
-        "--no-warnings",
-        url,
-    ];
+    // Windows: hide console window
+    let mut cmd = Command::new(binary_path);
+    cmd.arg("--dump-single-json")
+        .arg("--flat-playlist")
+        .arg("--no-warnings")
+        .arg(url);
+
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
 
     tracing::info!("Fetching metadata for URL: {}", url);
 
-    let output = app
-        .shell()
-        .sidecar(sidecar.program_name())
-        .map_err(|e| MetadataError::Sidecar(e.to_string()))?
-        .args(&args)
+    let output = cmd
         .output()
         .await
         .map_err(|e| MetadataError::Execution(e.to_string()))?;
