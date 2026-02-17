@@ -1,8 +1,9 @@
 pub mod types;
 
-use tauri::AppHandle;
-use tauri_plugin_shell::ShellExt;
+use std::path::PathBuf;
+use tauri::{AppHandle, Manager};
 use thiserror::Error;
+use tokio::process::Command;
 
 use types::{SidecarBinary, SidecarInfo, SidecarStatus};
 
@@ -10,7 +11,7 @@ use types::{SidecarBinary, SidecarInfo, SidecarStatus};
 
 #[derive(Debug, Error)]
 pub enum SidecarError {
-    #[error("Sidecar binary '{0}' not found — run scripts/download-sidecars.ps1")]
+    #[error("Sidecar binary '{0}' not found in app data")]
     BinaryNotFound(String),
 
     #[error("Failed to execute {binary}: {reason}")]
@@ -21,6 +22,9 @@ pub enum SidecarError {
 
     #[error("yt-dlp self-update failed: {0}")]
     UpdateFailed(String),
+
+    #[error("Failed to setup sidecars: {0}")]
+    SetupFailed(String),
 }
 
 impl From<SidecarError> for String {
@@ -31,19 +35,99 @@ impl From<SidecarError> for String {
 
 // ── Public API ───────────────────────────────────────────────────────
 
+/// Ensure sidecar binaries exist in `app_data/binaries/`.
+/// If not, copy them from the bundled resources.
+pub async fn setup_sidecars(handle: &AppHandle) -> Result<(), SidecarError> {
+    let app_data_dir = handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| SidecarError::SetupFailed(format!("Failed to resolve app_data_dir: {}", e)))?;
+
+    let binary_dir = app_data_dir.join("binaries");
+
+    if !binary_dir.exists() {
+        tokio::fs::create_dir_all(&binary_dir).await.map_err(|e| {
+            SidecarError::SetupFailed(format!("Failed to create binary dir: {}", e))
+        })?;
+    }
+
+    let resource_dir = handle
+        .path()
+        .resource_dir()
+        .map_err(|e| SidecarError::SetupFailed(format!("Failed to resolve resource_dir: {}", e)))?;
+
+    // We expect bundled binaries in specific locations relative to resource_dir
+    // Specifically: resources/binaries/<name>-<target>
+    // Since we don't know the exact target triple easily at runtime without build hacks,
+    // we search for files starting with the program name in the bundled binaries folder.
+    let bundled_bin_dir = resource_dir.join("binaries");
+
+    for binary in [SidecarBinary::YtDlp, SidecarBinary::Ffmpeg] {
+        let name = binary.program_name(); // "yt-dlp" or "ffmpeg"
+        let target_filename = if cfg!(windows) {
+            format!("{}.exe", name)
+        } else {
+            name.to_string()
+        };
+        let target_path = binary_dir.join(&target_filename);
+
+        if !target_path.exists() {
+            tracing::info!("Installing sidecar: {} -> {:?}", name, target_path);
+
+            // Find source file: name-*.exe or name-*
+            let mut source_path: Option<PathBuf> = None;
+            let mut entries = tokio::fs::read_dir(&bundled_bin_dir).await.map_err(|e| {
+                SidecarError::SetupFailed(format!("Failed to read bundled binaries dir: {}", e))
+            })?;
+
+            while let Some(entry) = entries.next_entry().await.map_err(|e| {
+                SidecarError::SetupFailed(format!("Failed to iterate bundled entries: {}", e))
+            })? {
+                let file_name = entry.file_name();
+                let file_name_str = file_name.to_string_lossy();
+                if file_name_str.starts_with(name) && file_name_str.contains('-') {
+                    // Simple heuristic: starts with name and has a dash (implies target triple suffix)
+                    // e.g. yt-dlp-x86_64-pc-windows-msvc.exe
+                    source_path = Some(entry.path());
+                    break;
+                }
+            }
+
+            if let Some(src) = source_path {
+                tokio::fs::copy(&src, &target_path).await.map_err(|e| {
+                    SidecarError::SetupFailed(format!(
+                        "Failed to copy {} to {:?}: {}",
+                        name, target_path, e
+                    ))
+                })?;
+            } else {
+                tracing::warn!(
+                    "Bundled binary for {} not found in {:?}, skipping copy.",
+                    name,
+                    bundled_bin_dir
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Retrieve the version string of a sidecar binary.
-///
-/// - `yt-dlp --version`  → `"2025.01.15"`
-/// - `ffmpeg -version`   → first line, e.g. `"ffmpeg version N-118193-g..."`.
 pub async fn get_version(
     handle: &AppHandle,
     binary: SidecarBinary,
 ) -> Result<String, SidecarError> {
-    let output = handle
-        .shell()
-        .sidecar(binary.program_name())
-        .map_err(|_| SidecarError::BinaryNotFound(binary.display_name().to_string()))?
+    let binary_path = get_binary_path(handle, binary)?;
+
+    // Use tokio::process::Command directly to execute the binary from app_data
+    // This bypasses tauri_plugin_shell's scope restriction on absolute paths,
+    // relying on the fact that we completely control this backend execution.
+    let output = Command::new(binary_path)
         .args(binary.version_args())
+        // crucial: detach from console on windows to avoid popping up windows?
+        // default tokio command shouldn't pop up window unless specifically told to?
+        // usually needs creation_flags(0x08000000) for NO_WINDOW if gui app
         .output()
         .await
         .map_err(|e| SidecarError::ExecutionFailed {
@@ -67,12 +151,10 @@ pub async fn get_version(
 /// Returns the new version string on success.
 pub async fn update_yt_dlp(handle: &AppHandle) -> Result<String, SidecarError> {
     tracing::info!("Starting yt-dlp self-update…");
+    let binary_path = get_binary_path(handle, SidecarBinary::YtDlp)?;
 
-    let output = handle
-        .shell()
-        .sidecar(SidecarBinary::YtDlp.program_name())
-        .map_err(|_| SidecarError::BinaryNotFound("yt-dlp".to_string()))?
-        .args(["-U"])
+    let output = Command::new(&binary_path)
+        .arg("-U")
         .output()
         .await
         .map_err(|e| SidecarError::ExecutionFailed {
@@ -80,6 +162,8 @@ pub async fn update_yt_dlp(handle: &AppHandle) -> Result<String, SidecarError> {
             reason: e.to_string(),
         })?;
 
+    // Note: yt-dlp exit code might vary on update?
+    // Usually 0 is success.
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(SidecarError::UpdateFailed(stderr.trim().to_string()));
@@ -89,6 +173,27 @@ pub async fn update_yt_dlp(handle: &AppHandle) -> Result<String, SidecarError> {
 
     // Fetch the new version after update
     get_version(handle, SidecarBinary::YtDlp).await
+}
+
+/// Get the absolute path to the binary in app_data.
+pub fn get_binary_path(handle: &AppHandle, binary: SidecarBinary) -> Result<PathBuf, SidecarError> {
+    let app_data_dir = handle
+        .path()
+        .app_data_dir()
+        .map_err(|_| SidecarError::BinaryNotFound("Could not resolve app_data".into()))?;
+
+    let name = binary.program_name();
+    let filename = if cfg!(windows) {
+        format!("{}.exe", name)
+    } else {
+        name.to_string()
+    };
+
+    let path = app_data_dir.join("binaries").join(filename);
+    if !path.exists() {
+        return Err(SidecarError::BinaryNotFound(path.display().to_string()));
+    }
+    Ok(path)
 }
 
 /// Run a full health check on both sidecar binaries.
@@ -139,7 +244,7 @@ fn parse_version(binary: SidecarBinary, raw: &str) -> Result<String, SidecarErro
     match binary {
         // yt-dlp --version prints just the date string: "2025.01.15"
         SidecarBinary::YtDlp => Ok(first_line.to_string()),
-        // ffmpeg -version prints: "ffmpeg version N-118193-g... Copyright ..."
+        // ffmpeg -version prints: "ffmpeg version N-118193-g..."
         // We extract everything after "ffmpeg version " up to the next space.
         SidecarBinary::Ffmpeg => {
             let version = first_line

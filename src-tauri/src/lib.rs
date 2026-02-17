@@ -48,6 +48,15 @@ pub fn run() {
 
             tracing::info!("Database initialized successfully");
 
+            // Initialize sidecars (copy from bundle to app_data if needed)
+            let handle = app.handle().clone();
+            tauri::async_runtime::block_on(async move {
+                if let Err(e) = sidecar::setup_sidecars(&handle).await {
+                    tracing::error!("Failed to setup sidecars: {}", e);
+                    // We don't panic here to allow the app to start, but sidecars won't work
+                }
+            });
+
             app.manage(AppState { db });
 
             Ok(())
@@ -55,8 +64,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             commands::sidecar::get_sidecar_status,
-            commands::sidecar::get_sidecar_version,
-            commands::sidecar::update_sidecar,
+            commands::sidecar::get_ytdlp_version,
+            commands::sidecar::update_ytdlp,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
