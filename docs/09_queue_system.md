@@ -42,7 +42,7 @@ graph TD
 - **Format selection**: Passes `-f <format>` when `format_selection` is provided.
 - **Output template**: Uses `--output "%(title)s.%(ext)s"`.
 - **Progress throttling**: Emits events at most every 500ms to avoid IPC flooding.
-- **DB writes**: Persists `progress`, `speed`, `eta` to DB on each throttled update.
+- **DB writes**: Persists `progress`, `speed`, `eta` using `update_many` to avoid redundant `SELECT` queries.
 
 ### 3. Task States (`download_task` table)
 - `QUEUED`: Waiting for a slot.

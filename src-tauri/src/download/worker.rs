@@ -1,7 +1,7 @@
 use super::parser::Parser;
 use crate::entity::download_task;
 use crate::sidecar::{get_binary_path, types::SidecarBinary};
-use sea_orm::{DatabaseConnection, EntityTrait, Set};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -42,7 +42,7 @@ impl DownloadWorker {
         format_selection: Option<String>,
         cancel_token: CancellationToken,
         db: DatabaseConnection,
-    ) -> Result<(), String> {
+    ) -> Result<(Option<u64>, u64), String> {
         let binary_path =
             get_binary_path(&self.app, SidecarBinary::YtDlp).map_err(|e| e.to_string())?;
 
@@ -56,7 +56,10 @@ impl DownloadWorker {
             .arg("-P")
             .arg(&output_dir)
             .arg("--output")
-            .arg("%(title)s.%(ext)s");
+            .arg("%(title)s.%(ext)s")
+            // Rate limit for debugging/stability (5MB/s)
+            .arg("--limit-rate")
+            .arg("5M");
 
         // Apply format selection if specified
         if let Some(ref fmt) = format_selection {
@@ -108,12 +111,31 @@ impl DownloadWorker {
         let parser = Parser::new();
         let mut last_emit = Instant::now();
 
+        // Create explicit variables to track stats across the loop
+        let mut final_total_bytes = None;
+        let mut final_downloaded_bytes = 0;
+        let mut was_killed = false;
+
         let read_result: Result<(), String> = loop {
+            // Check cancellation BEFORE entering select! to guarantee
+            // cancel wins even if read_line already returned data.
+            if cancel_token.is_cancelled() {
+                tracing::info!("Download cancelled for task: {}", task_id);
+                let _ = child.kill().await;
+                let _ = child.wait().await; // Reap process to avoid zombies on Windows
+                was_killed = true;
+                break Err("Download cancelled by user".to_string());
+            }
+
             tokio::select! {
+                biased; // Prefer cancellation over read_line
+
                 // Cancellation branch
                 _ = cancel_token.cancelled() => {
                     tracing::info!("Download cancelled for task: {}", task_id);
                     let _ = child.kill().await;
+                    let _ = child.wait().await;
+                    was_killed = true;
                     break Err("Download cancelled by user".to_string());
                 }
                 // Read next line
@@ -122,6 +144,12 @@ impl DownloadWorker {
                         Ok(0) => break Ok(()), // EOF
                         Ok(_) => {
                             if let Some(progress) = parser.parse_line(&line) {
+                                // Update final stats
+                                final_total_bytes = progress.total_bytes;
+                                if let Some(bytes) = progress.downloaded_bytes {
+                                    final_downloaded_bytes = bytes;
+                                }
+
                                 let now = Instant::now();
                                 if now.duration_since(last_emit) >= PROGRESS_THROTTLE
                                     || progress.progress >= 100.0
@@ -140,15 +168,31 @@ impl DownloadWorker {
                                     let _ = self.app.emit("download-progress", &payload);
 
                                     // Persist progress to DB (throttled)
-                                    let _ = download_task::Entity::update(download_task::ActiveModel {
-                                        id: Set(task_id.clone()),
-                                        progress: Set(progress.progress as f32),
-                                        speed: Set(progress.speed.clone()),
-                                        eta: Set(progress.eta.clone()),
-                                        ..Default::default()
-                                    })
-                                    .exec(&db)
-                                    .await;
+                                    // Use update_many to avoid implicit SELECT after UPDATE
+                                    let _ = download_task::Entity::update_many()
+                                        .col_expr(
+                                            download_task::Column::Progress,
+                                            sea_orm::sea_query::Expr::value(progress.progress as f32),
+                                        )
+                                        .col_expr(
+                                            download_task::Column::Speed,
+                                            sea_orm::sea_query::Expr::value(progress.speed.clone()),
+                                        )
+                                        .col_expr(
+                                            download_task::Column::Eta,
+                                            sea_orm::sea_query::Expr::value(progress.eta.clone()),
+                                        )
+                                        .col_expr(
+                                            download_task::Column::DownloadedBytes,
+                                            sea_orm::sea_query::Expr::value(progress.downloaded_bytes),
+                                        )
+                                        .col_expr(
+                                            download_task::Column::TotalBytes,
+                                            sea_orm::sea_query::Expr::value(progress.total_bytes),
+                                        )
+                                        .filter(download_task::Column::Id.eq(task_id.clone()))
+                                        .exec(&db)
+                                        .await;
                                 }
                             }
                             line.clear();
@@ -165,11 +209,16 @@ impl DownloadWorker {
         // If the read loop errored (cancelled or IO error), propagate it
         read_result?;
 
-        // Wait for process to finish
-        let status = child.wait().await.map_err(|e| e.to_string())?;
+        // Wait for process to finish (skip if already killed & waited)
+        let status = if was_killed {
+            // Process already reaped in the kill path
+            return Ok((final_total_bytes, final_downloaded_bytes));
+        } else {
+            child.wait().await.map_err(|e| e.to_string())?
+        };
 
         if status.success() {
-            Ok(())
+            Ok((final_total_bytes, final_downloaded_bytes))
         } else {
             // Build error message from stderr
             let stderr_output = stderr_lines.lock().await;

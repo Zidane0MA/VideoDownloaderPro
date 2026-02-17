@@ -29,6 +29,8 @@ pub struct DownloadTaskInfo {
     pub created_at: String,
     pub started_at: Option<String>,
     pub completed_at: Option<String>,
+    pub downloaded_bytes: Option<i64>,
+    pub total_bytes: Option<i64>,
 }
 
 impl From<download_task::Model> for DownloadTaskInfo {
@@ -47,6 +49,8 @@ impl From<download_task::Model> for DownloadTaskInfo {
             created_at: m.created_at.to_rfc3339(),
             started_at: m.started_at.map(|t| t.to_rfc3339()),
             completed_at: m.completed_at.map(|t| t.to_rfc3339()),
+            downloaded_bytes: m.downloaded_bytes,
+            total_bytes: m.total_bytes,
         }
     }
 }
@@ -192,11 +196,8 @@ pub async fn pause_download_task(
 
     match task.status.as_str() {
         "PROCESSING" => {
-            // Cancel the running worker — the error message "paused" triggers PAUSED status
-            // in the manager's error handler instead of CANCELLED
-            queue.cancel_task(&task_id).await;
-            // The manager will detect "paused" in the error and set status to PAUSED
-            // We pre-set it here in case the token check races
+            // Update DB first to avoid race condition where manager sees "PROCESSING"
+            // and marks it as CANCELLED
             let _ = download_task::Entity::update(download_task::ActiveModel {
                 id: Set(task_id.clone()),
                 status: Set("PAUSED".to_string()),
@@ -204,6 +205,9 @@ pub async fn pause_download_task(
             })
             .exec(&state.db)
             .await;
+
+            // Then cancel the running worker
+            queue.cancel_task(&task_id).await;
         }
         "QUEUED" => {
             let _ = download_task::Entity::update(download_task::ActiveModel {
@@ -251,6 +255,8 @@ pub async fn resume_download_task(
         id: Set(task_id.clone()),
         status: Set("QUEUED".to_string()),
         error_message: Set(None),
+        speed: Set(None),
+        eta: Set(None),
         ..Default::default()
     })
     .exec(&state.db)

@@ -6,7 +6,7 @@
 -   **Download Engine:** `yt-dlp` (standalone binary) as a Sidecar.
 -   **Media Processing:** `ffmpeg` (standalone binary) as a Sidecar.
 -   **Database:** SQLite (managed via Sea-ORM).
--   **State Management:** TanStack Query (React Query) + Zustand.
+-   **State Management:** TanStack Query (React Query) + Zustand (using `Record<string, Task>` for O(1) updates).
 -   **Internationalization:** react-i18next + i18next.
 -   **Logging:** `tracing` (Rust) + custom frontend logger via IPC.
 

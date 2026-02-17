@@ -13,21 +13,29 @@ pub struct ProgressUpdate {
 
 pub struct Parser {
     progress_regex: Regex,
+    completion_regex: Regex,
 }
 
 impl Parser {
     pub fn new() -> Self {
         // [download]  45.0% of 10.00MiB at  2.00MiB/s ETA 00:05
-        // [download] 100% of 10.00MiB in 00:03
         let re = Regex::new(
             r"\[download\]\s+(\d+(?:\.\d+)?)%\s+of\s+(?:~)?(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)",
         )
         .unwrap();
 
-        Self { progress_regex: re }
+        // [download] 100% of 10.00MiB in 00:03
+        let completion_re =
+            Regex::new(r"\[download\]\s+100(?:\.0)?%\s+of\s+(?:~)?(\S+)\s+in\s+(\S+)").unwrap();
+
+        Self {
+            progress_regex: re,
+            completion_regex: completion_re,
+        }
     }
 
     pub fn parse_line(&self, line: &str) -> Option<ProgressUpdate> {
+        // Try the normal progress line first
         if let Some(caps) = self.progress_regex.captures(line) {
             let progress_str = caps.get(1)?.as_str();
             let progress = progress_str.parse::<f64>().ok()?;
@@ -49,6 +57,18 @@ impl Parser {
                 total_bytes,
                 speed,
                 eta,
+            })
+        } else if let Some(caps) = self.completion_regex.captures(line) {
+            // Completion line: [download] 100% of 10.00MiB in 00:03
+            let total_size_str = caps.get(1).map(|m| m.as_str().to_string());
+            let total_bytes = total_size_str.as_ref().and_then(|s| parse_size(s));
+
+            Some(ProgressUpdate {
+                progress: 100.0,
+                downloaded_bytes: total_bytes, // 100% means all bytes downloaded
+                total_bytes,
+                speed: None,
+                eta: None,
             })
         } else {
             None
@@ -128,5 +148,29 @@ mod tests {
         assert_eq!(parse_size("0.00MiB"), Some(0));
         assert!(parse_size("unknown").is_none());
         assert!(parse_size("").is_none());
+    }
+
+    #[test]
+    fn test_parse_completion_line() {
+        let parser = Parser::new();
+        let line = "[download] 100% of 10.00MiB in 00:03";
+        let update = parser.parse_line(line).unwrap();
+
+        assert_eq!(update.progress, 100.0);
+        assert_eq!(update.total_bytes, Some(10485760));
+        assert_eq!(update.downloaded_bytes, Some(10485760));
+        assert_eq!(update.speed, None);
+        assert_eq!(update.eta, None);
+    }
+
+    #[test]
+    fn test_parse_completion_line_with_decimal() {
+        let parser = Parser::new();
+        let line = "[download] 100.0% of 5.50GiB in 01:23:45";
+        let update = parser.parse_line(line).unwrap();
+
+        assert_eq!(update.progress, 100.0);
+        assert!(update.total_bytes.is_some());
+        assert_eq!(update.downloaded_bytes, update.total_bytes);
     }
 }

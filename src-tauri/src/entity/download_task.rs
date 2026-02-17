@@ -20,6 +20,8 @@ pub struct Model {
     pub created_at: DateTimeUtc,
     pub started_at: Option<DateTimeUtc>,
     pub completed_at: Option<DateTimeUtc>,
+    pub downloaded_bytes: Option<i64>,
+    pub total_bytes: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
