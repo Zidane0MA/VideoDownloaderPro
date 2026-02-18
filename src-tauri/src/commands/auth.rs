@@ -7,7 +7,6 @@ use tauri::{Emitter, Manager, State, Window};
 // use windows::core as windows_core;
 
 #[cfg(target_os = "windows")]
-#[cfg(target_os = "windows")]
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     ICoreWebView2GetCookiesCompletedHandler, ICoreWebView2GetCookiesCompletedHandler_Impl,
 };
@@ -96,12 +95,14 @@ impl ICoreWebView2GetCookiesCompletedHandler_Impl for CookieHandler_Impl {
     }
 }
 
+use crate::AppState;
+
 #[tauri::command]
 pub async fn get_auth_status(
-    db: State<'_, Arc<DatabaseConnection>>,
+    state: State<'_, AppState>,
 ) -> Result<Vec<platform_session::Model>, String> {
     platform_session::Entity::find()
-        .all(db.as_ref())
+        .all(&state.db)
         .await
         .map_err(|e| e.to_string())
 }
@@ -166,13 +167,15 @@ pub async fn import_from_browser(
         #[cfg(target_os = "windows")]
         {
             let auth_window_label = format!("auth_{}", platform_id);
-            let mut created_window = false;
+            let mut close_after_extraction = false;
 
             let auth_window = if let Some(w) = app_handle.get_webview_window(&auth_window_label) {
+                tracing::info!("Found existing auth window {}, using it for extraction", auth_window_label);
                 w
             } else {
-                tracing::info!("Auth window not found, creating hidden window for extraction");
-                created_window = true;
+                let unique_label = format!("auth_extract_{}_{}", platform_id, uuid::Uuid::new_v4());
+                tracing::info!("Auth window not found, creating hidden window {} for extraction", unique_label);
+                close_after_extraction = true;
                 
                 let app_local_data = app_handle
                     .path()
@@ -182,7 +185,7 @@ pub async fn import_from_browser(
 
                 let w = tauri::WebviewWindowBuilder::new(
                     &app_handle,
-                    &auth_window_label,
+                    &unique_label,
                     tauri::WebviewUrl::External(url.parse().unwrap()),
                 )
                 .title(format!("Login to {}", platform_id))
@@ -232,7 +235,8 @@ pub async fn import_from_browser(
             // Wait for result
             let result = rx.await.map_err(|e| format!("Cookie extraction channel error: {}", e))??;
 
-            if created_window {
+            if close_after_extraction {
+                tracing::info!("Closing temporary extraction window");
                 let _ = auth_window.close();
             }
 

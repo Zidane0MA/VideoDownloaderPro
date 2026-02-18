@@ -62,7 +62,7 @@ export function AccountCard({ platformId, name, session }: AccountCardProps) {
               
               {isConnected && session?.last_verified && (
                  <span className="text-xs text-zinc-500 ml-2">
-                   Checked: {new Date(session.last_verified).toLocaleDateString()}
+                    • {new Date(session.last_verified).toLocaleDateString()}
                  </span>
               )}
             </div>

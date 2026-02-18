@@ -1,15 +1,31 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { useEffect } from 'react';
 import { PlatformSession } from '../types/auth';
 
 // Fetch all sessions
 export const useAuthStatus = () => {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    console.log('[useAuthStatus] Setting up event listener');
+    const unlistenPromise = listen('session-status-changed', (event) => {
+      console.log('[useAuthStatus] Event received:', event);
+      // Force refetch even if fresh
+      queryClient.invalidateQueries({ queryKey: ['auth-status'], refetchType: 'all' });
+    });
+
+    return () => {
+      unlistenPromise.then(unlisten => unlisten());
+    };
+  }, [queryClient]);
+
   return useQuery({
     queryKey: ['auth-status'],
     queryFn: async () => {
       const sessions = await invoke<PlatformSession[]>('get_auth_status');
-      // Normalize: API might return missing platforms as simply not in the list.
-      // We process this in the UI or here. Let's return raw list.
+      console.log('[useAuthStatus] Fetched sessions:', sessions);
       return sessions;
     },
   });
