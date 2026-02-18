@@ -1,6 +1,7 @@
 export interface PlatformSession {
   platform_id: string;
   status: 'ACTIVE' | 'EXPIRED' | 'NONE';
+  username?: string;
   cookie_method: string;
   expires_at?: string; // ISO string
   last_verified?: string; // ISO string

@@ -27,6 +27,8 @@
     - [x] **Verify L1 (WebView)**: Working (Fixed "Not Connected" & "Channel Closed" bugs).
     - [/] **Verify L2 (Browser)**: Working for Firefox. Chrome/Edge restricted by App-Bound Encryption (UX limitations added).
     - [x] **Verify L3 (Manual)**: Working.
+    - [x] **Validation**: Fix False Positive Auth (Empty/Guest Cookies)
+    - [x] **Feature**: Display Username in Account Card (Migration + Extraction)
 
 ### Phase 4: Frontend - Download Manager (Partial)
 - [x] Active Downloads UI

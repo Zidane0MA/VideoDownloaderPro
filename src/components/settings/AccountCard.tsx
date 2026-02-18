@@ -52,7 +52,7 @@ export function AccountCard({ platformId, name, session }: AccountCardProps) {
               {isConnected ? (
                 <span className="text-xs flex items-center gap-1.5 text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
                   <CheckCircle2 size={12} />
-                  Connected
+                  {session?.username ? `@${session.username}` : 'Connected'}
                 </span>
               ) : isExpired ? (
                 <span className="text-xs flex items-center gap-1.5 text-orange-400 bg-orange-400/10 px-2 py-0.5 rounded-full">

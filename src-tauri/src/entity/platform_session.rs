@@ -7,6 +7,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub platform_id: String,
     pub status: String,
+    pub username: Option<String>,
     #[sea_orm(column_type = "VarBinary(StringLen::None)")]
     pub encrypted_cookies: Option<Vec<u8>>,
     pub cookie_method: String,

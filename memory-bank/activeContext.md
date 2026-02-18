@@ -10,6 +10,8 @@ We have successfully implemented robust authentication (L1/L2/L3) and fixed the 
 - **Deno Migration**: Replaced `quickjs` with `deno` as the JS runtime limit for `yt-dlp` to improve compatibility and performance.
 - **Auth Fix (AppState Injection)**: Fixed critical bug in `get_auth_status` where `DatabaseConnection` was not correctly managed, causing "state not managed" errors.
 - **Auth Fixes**: Resolved "Not Connected" state issues and "Channel Closed" errors in WebView extraction.
+- **Session Validation**: Implemented mandatory cookie checks (`auth_token`, `sessionid`) to prevent false positive logins.
+- **Username Display**: Added `username` column to `platform_sessions` and implemented extraction logic for Instagram/TikTok.
 - **L2 UX Improvements**: Added UI warnings for browser encryption limitations (App-Bound Encryption) and sanitized `yt-dlp` error output.
 - **Auth Scaling Docs**: Created `docs/features/auth_scaling.md` with performance recommendations.
 - **Backend**: Updated `fetcher.rs` and `worker.rs` to use `deno` runtime.
@@ -21,6 +23,8 @@ We have successfully implemented robust authentication (L1/L2/L3) and fixed the 
     -   **L1 (WebView)**: Verified & Working.
     -   **L2 (Browser Import)**: Working for Firefox; Restricted for Chrome/Edge (App-Bound Encryption). UX warnings added.
     -   **L3 (Manual)**: Verified & Working.
+    -   **Validation**: Implemented (rejects guest cookies).
+    -   **Display**: Username showing for supported platforms (IG/TikTok).
 - **Next Focus**: Moving to Phase 4 (Frontend Polish) & Phase 5 (Gallery).
 
 ## Next Steps
