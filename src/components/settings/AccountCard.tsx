@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { PlatformSession } from '../../types/auth';
 import { useDeleteSession } from '../../hooks/useAuth';
 import { ConnectAccountModal } from './ConnectAccountModal';
+import { DisconnectAccountModal } from './DisconnectAccountModal';
 import { 
   CheckCircle2, 
   XCircle, 
   LogOut, 
-  Upload 
+  Upload,
+  AlertCircle 
 } from 'lucide-react';
 
 interface AccountCardProps {
@@ -17,14 +19,18 @@ interface AccountCardProps {
 
 export function AccountCard({ platformId, name, session }: AccountCardProps) {
   const [showConnectModal, setShowConnectModal] = useState(false);
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
   const deleteSession = useDeleteSession();
 
   const isConnected = session?.status === 'ACTIVE';
   const isExpired = session?.status === 'EXPIRED';
 
-  const handleDisconnect = () => {
-    if (confirm(`Are you sure you want to disconnect ${name}?`)) {
-      deleteSession.mutate(platformId);
+  const handleDisconnectConfirm = async () => {
+    try {
+      await deleteSession.mutateAsync(platformId);
+      setShowDisconnectModal(false);
+    } catch (error) {
+      console.error('Failed to disconnect:', error);
     }
   };
 
@@ -72,8 +78,7 @@ export function AccountCard({ platformId, name, session }: AccountCardProps) {
         <div className="flex items-center gap-2">
           {isConnected ? (
             <button
-              onClick={handleDisconnect}
-              disabled={deleteSession.isPending}
+              onClick={() => setShowDisconnectModal(true)}
               className="p-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-700 rounded-lg transition-colors"
               title="Disconnect"
             >
@@ -98,9 +103,15 @@ export function AccountCard({ platformId, name, session }: AccountCardProps) {
           onClose={() => setShowConnectModal(false)}
         />
       )}
+
+      {showDisconnectModal && (
+        <DisconnectAccountModal
+          platformName={name}
+          onClose={() => setShowDisconnectModal(false)}
+          onConfirm={handleDisconnectConfirm}
+          isPending={deleteSession.isPending}
+        />
+      )}
     </>
   );
 }
-
-// Helper for AlertCircle which was missing in import above if we used it in 'isExpired' logic
-import { AlertCircle } from 'lucide-react'; 
