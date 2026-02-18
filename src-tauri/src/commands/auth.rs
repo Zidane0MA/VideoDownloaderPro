@@ -1,6 +1,6 @@
 use crate::auth::cookie_manager::CookieManager;
 use crate::entity::platform_session;
-use sea_orm::{DatabaseConnection, EntityTrait};
+use sea_orm::{EntityTrait};
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State, Window};
 #[cfg(target_os = "windows")]

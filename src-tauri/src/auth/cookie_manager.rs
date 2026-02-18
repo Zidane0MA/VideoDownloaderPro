@@ -130,6 +130,10 @@ impl CookieManager {
             }
         }
 
+        // Validate that the cookies actually contain the required auth tokens
+        self.validate_session_cookies(&platform_id, &cookies_str)
+            .await?;
+
         let encrypted_data = encrypt_string(&cookies_str)?;
 
         let now = Utc::now();
@@ -268,6 +272,58 @@ impl CookieManager {
         platform_session::Entity::delete_by_id(platform_id.to_string())
             .exec(self.db.as_ref())
             .await?;
+        Ok(())
+    }
+
+    async fn validate_session_cookies(
+        &self,
+        platform_id: &str,
+        cookies_str: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Parse the Netscape format to find cookie names
+        // Format: domain \t flag \t path \t secure \t expiration \t name \t value
+        let cookie_names: Vec<&str> = cookies_str
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.len() >= 6 {
+                    Some(parts[5]) // Name is at index 5
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let required_cookie = match platform_id {
+            "youtube" => vec!["__Secure-3PSID", "SID"], // Either is usually sufficient, prefer 3PSID
+            "tiktok" => vec!["sessionid_ss", "sessionid"], // sessionid usually
+            "instagram" => vec!["sessionid"],
+            "x" => vec!["auth_token"],
+            _ => vec![], // No validation for unknown platforms yet
+        };
+
+        if required_cookie.is_empty() {
+            return Ok(());
+        }
+
+        let has_required = required_cookie
+            .iter()
+            .any(|&req| cookie_names.contains(&req));
+
+        if !has_required {
+            tracing::warn!(
+                "Session validation failed for {}. Missing required cookie from: {:?}",
+                platform_id,
+                required_cookie
+            );
+            return Err(format!(
+                "Session validation failed. Missing required authentication cookie ({:?}). Please ensure you are logged in.",
+                required_cookie
+            )
+            .into());
+        }
+
         Ok(())
     }
 }
