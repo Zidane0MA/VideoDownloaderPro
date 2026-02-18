@@ -20,7 +20,7 @@
 ### Infrastructure / Binaries
 *   **Database:** SQLite (embedded)
 *   **Downloader:** `yt-dlp` (Python-based, compiled executable)
-*   **JS Runtime:** `QuickJS` (bundled sidecar for `yt-dlp` signature extraction)
+*   **JS Runtime:** `Deno` (bundled sidecar for `yt-dlp` signature extraction)
 *   **Media Proc:** `ffmpeg`
 *   **Encryption:** Windows DPAPI (via Rust `bytehouse` or similar crate)
 

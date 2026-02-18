@@ -50,9 +50,9 @@
     -   Runtime copy of `yt-dlp.exe` from bundled to `app_data/binaries/`.
     -   Version check + auto-update via `yt-dlp -U`.
     -   Same for `ffmpeg.exe`.
-2.  **QuickJS Sidecar Integration:**
-    -   Bundle `qjs` binary for `yt-dlp` signature extraction.
-    -   Pass `--js-runtimes` flag to `yt-dlp` commands.
+2.  **Deno Sidecar Integration:**
+    -   Bundle `deno` binary for `yt-dlp` signature extraction (Replaces QuickJS).
+    -   Pass `--js-runtimes deno:/path/to/deno` flag to `yt-dlp` commands.
 3.  **Metadata Fetcher:**
     -   Implement Rust function to execute `yt-dlp --dump-json`.
     -   Parse JSON output into typed structs (Creator, Title, Formats, Thumbnails).

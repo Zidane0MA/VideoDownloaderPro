@@ -4,7 +4,7 @@
 -   **Frontend (UI):** React (Vite) + TailwindCSS + TypeScript.
 -   **Backend:** Tauri v2 (Rust).
 -   **Download Engine:** `yt-dlp` (standalone binary) as a Sidecar.
--   **JS Runtime:** `QuickJS` (standalone binary) as a Sidecar for `yt-dlp`.
+-   **JS Runtime:** `Deno` (standalone binary) as a Sidecar for `yt-dlp`.
 -   **Media Processing:** `ffmpeg` (standalone binary) as a Sidecar.
 -   **Database:** SQLite (managed via Sea-ORM).
 -   **State Management:** TanStack Query (React Query) + Zustand (using `Record<string, Task>` for O(1) updates).
@@ -21,7 +21,7 @@ graph TD
     subgraph "Rust Core"
         Tauri -->|Spawns| YTDLP[yt-dlp.exe Sidecar]
         Tauri -->|Spawns| FFMPEG[ffmpeg.exe Sidecar]
-        Tauri -->|Spawns| QJS[qjs.exe Sidecar]
+        Tauri -->|Spawns| DENO[deno.exe Sidecar]
         Tauri <-->|Sea-ORM| DB[(SQLite Database)]
         Tauri -->|File System| FS[Local Disk]
         Tauri -->|tracing| LOG[Log Files]
@@ -176,10 +176,10 @@ Files are grouped based on the **User's Intent** (how they initiated the downloa
 -   Same pattern as yt-dlp, but updates only with app releases (stable binary).
 -   Used for: thumbnail resizing, format conversion, audio extraction merging.
 
-### QuickJS (qjs)
--   **Purpose:** Provides a Javascript runtime for `yt-dlp` to extract signatures (needed for some Shorts/Age-gated content).
--   **Bundled** as `qjs.exe` (Windows) or `qjs` (Linux/Mac).
--   **Passed to yt-dlp** via `--js-runtimes quickjs:/path/to/qjs`.
+### Deno
+-   **Purpose:** Provides a modern Javascript runtime for `yt-dlp` to extract signatures (needed for some Shorts/Age-gated content). Replaces the older QuickJS.
+-   **Bundled** as `deno.exe` (Windows) or `deno` (Linux/Mac).
+-   **Passed to yt-dlp** via `--js-runtimes deno:/path/to/deno`.
 
 ### Permissions
 -   Strictly defined in `tauri.conf.json` — only whitelisted commands/paths.
