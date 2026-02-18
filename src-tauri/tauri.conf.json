@@ -29,7 +29,7 @@
     "externalBin": [
       "binaries/yt-dlp",
       "binaries/ffmpeg",
-      "binaries/qjs"
+      "binaries/deno"
     ],
     "icon": [
       "icons/32x32.png",

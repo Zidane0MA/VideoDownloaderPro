@@ -14,10 +14,10 @@ pub async fn fetch_metadata(
     let binary_path =
         get_binary_path(app, sidecar).map_err(|e| MetadataError::Sidecar(e.to_string()))?;
 
-    let sidecar_qjs = SidecarBinary::Qjs;
-    let qjs_path = get_binary_path(app, sidecar_qjs)
-        .map_err(|e| MetadataError::Sidecar(format!("QuickJS not found: {}", e)))?;
-    let qjs_arg = format!("quickjs:{}", qjs_path.to_string_lossy());
+    let sidecar_deno = SidecarBinary::Deno;
+    let deno_path = get_binary_path(app, sidecar_deno)
+        .map_err(|e| MetadataError::Sidecar(format!("Deno not found: {}", e)))?;
+    let deno_arg = format!("deno:{}", deno_path.to_string_lossy());
 
     // Construct arguments
     // --dump-single-json: Ensure we get a single JSON object (Video or Playlist)
@@ -31,7 +31,7 @@ pub async fn fetch_metadata(
         .arg("-f")
         .arg("bestvideo+bestaudio/best")
         .arg("--js-runtimes")
-        .arg(qjs_arg);
+        .arg(deno_arg);
 
     if let Some(path) = cookie_path {
         cmd.arg("--cookies").arg(path);

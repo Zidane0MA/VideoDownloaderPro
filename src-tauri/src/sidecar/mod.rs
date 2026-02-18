@@ -73,7 +73,7 @@ pub async fn setup_sidecars(handle: &AppHandle) -> Result<(), SidecarError> {
     for binary in [
         SidecarBinary::YtDlp,
         SidecarBinary::Ffmpeg,
-        SidecarBinary::Qjs,
+        SidecarBinary::Deno,
     ] {
         let name = binary.display_name(); // "yt-dlp" or "ffmpeg"
         let target_filename = if cfg!(windows) {
@@ -212,19 +212,19 @@ pub fn get_binary_path(handle: &AppHandle, binary: SidecarBinary) -> Result<Path
 pub async fn check_all(handle: &AppHandle) -> SidecarStatus {
     let yt_dlp = check_one(handle, SidecarBinary::YtDlp).await;
     let ffmpeg = check_one(handle, SidecarBinary::Ffmpeg).await;
-    let qjs = check_one(handle, SidecarBinary::Qjs).await;
+    let deno = check_one(handle, SidecarBinary::Deno).await;
 
     tracing::info!(
         yt_dlp_available = yt_dlp.available,
         ffmpeg_available = ffmpeg.available,
-        qjs_available = qjs.available,
+        deno_available = deno.available,
         "Sidecar health check complete"
     );
 
     SidecarStatus {
         yt_dlp,
         ffmpeg,
-        qjs,
+        deno,
     }
 }
 
@@ -262,8 +262,16 @@ fn parse_version(binary: SidecarBinary, raw: &str) -> Result<String, SidecarErro
     match binary {
         // yt-dlp --version prints just the date string: "2025.01.15"
         SidecarBinary::YtDlp => Ok(first_line.to_string()),
-        // qjs --version -> "QuickJS version 2024-01-13" or similar
-        SidecarBinary::Qjs => Ok(first_line.to_string()),
+        // deno --version -> "deno 2.1.2 (release, ...)"
+        SidecarBinary::Deno => {
+            // Extract "2.1.2" from "deno 2.1.2 (release, ...)"
+            // Or just return the full first line if parsing fails
+            let version = first_line
+                .strip_prefix("deno ")
+                .and_then(|s| s.split_whitespace().next())
+                .unwrap_or(first_line);
+            Ok(version.to_string())
+        }
         // ffmpeg -version prints: "ffmpeg version N-118193-g..."
         // We extract everything after "ffmpeg version " up to the next space.
         SidecarBinary::Ffmpeg => {

@@ -226,14 +226,14 @@ impl DownloadWorker {
 
         let mut cmd = Command::new(binary_path);
 
-        let qjs_path =
-            get_binary_path(&self.app, SidecarBinary::Qjs).map_err(|e| DownloadError::Failed {
-                message: format!("QuickJS not found: {}", e),
+        let deno_path =
+            get_binary_path(&self.app, SidecarBinary::Deno).map_err(|e| DownloadError::Failed {
+                message: format!("Deno not found: {}", e),
                 total_bytes: None,
                 downloaded_bytes: 0,
                 filename: None,
             })?;
-        let qjs_arg = format!("quickjs:{}", qjs_path.to_string_lossy());
+        let deno_arg = format!("deno:{}", deno_path.to_string_lossy());
 
         // --newline is CRITICAL for line-by-line progress parsing
         // -c enables resume of partial downloads (for pause/resume support)
@@ -248,7 +248,7 @@ impl DownloadWorker {
             .arg("--limit-rate")
             .arg("5M")
             .arg("--js-runtimes")
-            .arg(qjs_arg);
+            .arg(deno_arg);
 
         // Inject cookies if available
         if let Some(ref cookie_path) = temp_cookie_path {
