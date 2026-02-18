@@ -33,7 +33,7 @@ impl SidecarBinary {
         match self {
             Self::YtDlp => "yt-dlp",
             Self::Ffmpeg => "ffmpeg",
-            Self::Qjs => "quickjs",
+            Self::Qjs => "qjs",
         }
     }
 }

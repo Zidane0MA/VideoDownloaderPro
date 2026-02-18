@@ -70,7 +70,11 @@ pub async fn setup_sidecars(handle: &AppHandle) -> Result<(), SidecarError> {
         SidecarError::SetupFailed("Could not find bundled binaries directory".into())
     })?;
 
-    for binary in [SidecarBinary::YtDlp, SidecarBinary::Ffmpeg] {
+    for binary in [
+        SidecarBinary::YtDlp,
+        SidecarBinary::Ffmpeg,
+        SidecarBinary::Qjs,
+    ] {
         let name = binary.display_name(); // "yt-dlp" or "ffmpeg"
         let target_filename = if cfg!(windows) {
             format!("{}.exe", name)
