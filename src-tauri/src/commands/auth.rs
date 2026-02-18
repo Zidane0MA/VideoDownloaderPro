@@ -279,7 +279,17 @@ pub async fn import_from_browser(
             if temp_cookie_path.exists() {
                 let _ = tokio::fs::remove_file(&temp_cookie_path).await;
             }
-            return Err(format!("Failed to import cookies: {}", stderr));
+            // Sanitize error message
+            if stderr.contains("Failed to decrypt with DPAPI") || stderr.contains("App-Bound Encryption") {
+                 return Err("Browser security (App-Bound Encryption) blocked access. Please try the 'WebView' or 'Manual' tab.".into());
+            } else if stderr.contains("cookie file is missing") || stderr.contains("Could not find") {
+                 return Err("Could not find cookies for this browser. Ensure you are logged in.".into());
+            } else if stderr.contains("could not find") || stderr.contains("cookies database in") {
+                 return Err("Browser is not found. Please install it and try again.".into());
+            }
+
+            // Fallback generic message
+            return Err("Browser import failed due to an unknown error. Please try the 'WebView' or 'Manual' tab.".into());
         }
 
         if !temp_cookie_path.exists() {

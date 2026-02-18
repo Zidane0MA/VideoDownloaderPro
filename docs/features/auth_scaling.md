@@ -38,6 +38,7 @@ Avoid destroying and creating windows repeatedly.
 Prioritize lighter methods before falling back to WebView.
 - **L2 (Browser Import)**: Reading cookies from Chrome/Firefox via `yt-dlp` or direct SQLite reading is instant and uses negligible resources.
     *   *Action*: Make "Import from Browser" the default or bulk action.
+    *   **Limitation**: Chromium-based browsers (Chrome v127+, Edge) now use **App-Bound Encryption**, often blocking external tools (like `yt-dlp`) from reading cookies. Firefox is currently more reliable for this method.
 - **L3 (Manual)**: Zero resource cost, but higher user friction.
 
 ### 4. Headless alternatives (Advanced)

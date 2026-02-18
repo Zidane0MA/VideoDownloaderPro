@@ -152,9 +152,18 @@ export function ConnectAccountModal({ platformId, platformName, onClose }: Conne
 
           {activeTab === 'browser' && (
               <div className="space-y-6">
+                  <div className="bg-orange-500/10 border border-orange-500/20 p-4 rounded-lg mb-4">
+                      <div className="flex gap-2">
+                          <AlertCircle className="w-5 h-5 text-orange-400 shrink-0" />
+                          <div className="text-sm text-zinc-300 space-y-2">
+                              <p><strong className="text-orange-400">Important:</strong> Your browser must be <strong>completely closed</strong> (no background processes).</p>
+                              <p>Modern browsers may block this due to encryption.</p>
+                          </div>
+                      </div>
+                  </div>
+
                   <p className="text-sm text-zinc-400">
                       Import cookies directly from your standard browser. 
-                      <span className="text-red-400 block mt-1 font-medium">Please close your browser before importing!</span>
                   </p>
 
                   <div className="grid grid-cols-2 gap-3">
