@@ -1,4 +1,5 @@
 use super::encryption::{decrypt_string, encrypt_string};
+use super::extractor::UsernameExtractor;
 use crate::entity::platform_session;
 use chrono::Utc;
 
@@ -135,7 +136,7 @@ impl CookieManager {
             .await?;
 
         // Extract username if possible
-        let username = self.extract_username(&platform_id, &cookies_str);
+        let username = UsernameExtractor::extract_from_netscape(&cookies_str, &platform_id);
 
         let encrypted_data = encrypt_string(&cookies_str)?;
 
@@ -331,55 +332,5 @@ impl CookieManager {
         }
 
         Ok(())
-    }
-
-    fn extract_username(&self, platform_id: &str, cookies_str: &str) -> Option<String> {
-        // Simple regex-like parsing from cookies string
-        // We look for specific cookie names that usually hold the user ID or name
-
-        // Helper to find cookie value
-        let find_cookie_value = |name: &str| -> Option<String> {
-            cookies_str.lines().find_map(|line| {
-                let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >= 7 && parts[5] == name {
-                    Some(parts[6].to_string())
-                } else {
-                    None
-                }
-            })
-        };
-
-        match platform_id {
-            "instagram" => {
-                // 'ds_user_id' is just an ID, 'shbid' etc.
-                // Instagram doesn't always store the handle in cookies plainly.
-                // But 'ds_user' might be there in some versions.
-                // For now, let's try finding 'ds_user' or return None (UI will show "Connected")
-                find_cookie_value("ds_user")
-            }
-            "x" => {
-                // 'twid' format is like 'u=123456'
-                // 'ct0' is auth token.
-                // X handles are not usually in cookies.
-                // We might need an API call, but for now let's skip to keep it fast.
-                // Maybe we can return "X User" if auth_token is present?
-                if find_cookie_value("auth_token").is_some() {
-                    // We don't have the handle, but we can verify it's connected
-                    None
-                } else {
-                    None
-                }
-            }
-            "tiktok" => {
-                // "sid_tt" or "sessionid"
-                // Often 'user_id' is present but it's a number
-                find_cookie_value("user_id")
-            }
-            "youtube" => {
-                // Google doesn't put email in cookies easily verifyable.
-                None
-            }
-            _ => None,
-        }
     }
 }
