@@ -1,8 +1,5 @@
-use super::extractor::UsernameExtractor;
-
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[tokio::test]
     #[ignore]
@@ -72,7 +69,27 @@ mod tests {
                             &cookies,
                             &session.platform_id,
                         );
-                        println!("  -> Extracted Username: {:?}", username);
+                        println!("  -> Extracted Username/ID: {:?}", username);
+
+                        if let Some(user_val) = &username {
+                            if session.platform_id == "tiktok" {
+                                println!("  -> Attempting TikTok API fetch for UID: {}", user_val);
+                                let api_user =
+                                    crate::auth::api::UsernameFetcher::fetch_tiktok_username(
+                                        &cookies, user_val,
+                                    )
+                                    .await;
+                                println!("  -> API Fetched Username: {:?}", api_user);
+                            } else if session.platform_id == "x" || session.platform_id == "twitter"
+                            {
+                                println!("  -> Attempting X API fetch for User ID: {}", user_val);
+                                let api_user = crate::auth::api::UsernameFetcher::fetch_x_username(
+                                    &cookies, user_val,
+                                )
+                                .await;
+                                println!("  -> API Fetched Username: {:?}", api_user);
+                            }
+                        }
 
                         if let Some(db_user) = &session.username {
                             println!("  -> DB Stored Username: {}", db_user);

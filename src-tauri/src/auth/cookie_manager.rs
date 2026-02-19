@@ -136,7 +136,34 @@ impl CookieManager {
             .await?;
 
         // Extract username if possible
-        let username = UsernameExtractor::extract_from_netscape(&cookies_str, &platform_id);
+        let mut username = UsernameExtractor::extract_from_netscape(&cookies_str, &platform_id);
+
+        // API Fallback: If username is missing or looks like an ID, try fetching it
+        if username.is_none()
+            || username
+                .as_ref()
+                .map(|u| u.chars().all(char::is_numeric))
+                .unwrap_or(false)
+        {
+            if platform_id == "tiktok" {
+                if let Some(uid) = &username {
+                    if let Some(handle) =
+                        crate::auth::api::UsernameFetcher::fetch_tiktok_username(&cookies_str, uid)
+                            .await
+                    {
+                        username = Some(handle);
+                    }
+                }
+            } else if platform_id == "x" || platform_id == "twitter" {
+                if let Some(uid) = &username {
+                    if let Some(handle) =
+                        crate::auth::api::UsernameFetcher::fetch_x_username(&cookies_str, uid).await
+                    {
+                        username = Some(handle);
+                    }
+                }
+            }
+        }
 
         let encrypted_data = encrypt_string(&cookies_str)?;
 
