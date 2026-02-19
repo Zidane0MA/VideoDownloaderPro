@@ -69,10 +69,8 @@ impl UsernameFetcher {
             .build()
             .ok()?;
 
-        // Strategy: Request the user-id based redirection URL.
-        // X/Twitter usually redirects /i/user/:id to /:handle
-        // Trying intent/user which is more standard
-        let url = format!("https://twitter.com/intent/user?user_id={}", user_id);
+        // Strategy: Fetch home page and scrape screen_name
+        let url = "https://x.com/home";
 
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
@@ -96,25 +94,25 @@ impl UsernameFetcher {
             headers.insert(COOKIE, val);
         }
 
-        let res = client.get(&url).headers(headers).send().await.ok()?;
+        let res = client.get(url).headers(headers).send().await.ok()?;
 
         if res.status().is_success() {
-            let final_url = res.url().as_str();
-            // expected: https://x.com/Handle?params... or https://twitter.com/Handle
-            // Remove query params
-            let base_url = final_url.split('?').next().unwrap_or(final_url);
+            let text = res.text().await.unwrap_or_default();
 
-            // Split by slash and get last part
-            if let Some(handle) = base_url.split('/').last() {
-                if !handle.is_empty()
-                    && handle != "login"
-                    && handle != "home"
-                    && handle != "user"
-                    && handle != user_id
-                {
-                    return Some(handle.to_string());
+            // Generic search for "screen_name":"..."
+            // We skip the first part because split gives us the part *before* the first delimiter
+            let broken_str: Vec<&str> = text.split(r#""screen_name":""#).collect();
+            for part in broken_str.iter().skip(1) {
+                if let Some(end) = part.find('"') {
+                    let handle = &part[0..end];
+                    if !handle.is_empty()
+                        && handle != "home"
+                        && handle != "login"
+                        && handle != "user"
+                    {
+                        return Some(handle.to_string());
+                    }
                 }
-                // sometimes intent/user stays on intent/user if params are kept
             }
         }
 
