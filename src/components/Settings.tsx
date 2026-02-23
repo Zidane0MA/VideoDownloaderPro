@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { Moon, Sun, Monitor, Info, Users, RefreshCw } from 'lucide-react';
+import { Moon, Sun, Monitor, Info, Users, RefreshCw, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AccountCard } from './settings/AccountCard';
+import { PlatformPickerModal } from './settings/PlatformPickerModal';
+import { ConnectAccountModal } from './settings/ConnectAccountModal';
 import { PLATFORMS } from '../types/auth';
 import { useAuthStatus, useVerifyAllSessions } from '../hooks/useAuth';
 
@@ -11,6 +13,12 @@ export const Settings: React.FC = () => {
   const verifyAll = useVerifyAllSessions();
   // Placeholder for theme state - in a real app this would come from a theme store/context
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('dark'); 
+  const [showPicker, setShowPicker] = useState(false);
+  const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null);
+
+  const activeSessions = authStatus?.filter(s => s.status !== 'NONE') || [];
+  const connectedPlatforms = PLATFORMS.filter(p => activeSessions.some(s => s.platform_id === p.id));
+  const selectedPlatform = PLATFORMS.find(p => p.id === selectedPlatformId);
 
   return (
     <div className="max-w-3xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -22,12 +30,19 @@ export const Settings: React.FC = () => {
       <div className="space-y-6">
         {/* Accounts Section */}
         <section className="bg-surface-800 border border-surface-700 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-surface-700">
+          <div className="px-6 py-4 border-b border-surface-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <h3 className="font-semibold text-white flex items-center gap-2">
               <Users className="w-4 h-4 text-brand-400" />
               {t('settings.accounts', 'Accounts')}
             </h3>
-            <button
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowPicker(true)}
+                className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded-lg flex items-center gap-1.5 transition-colors"
+              >
+                <Plus size={14} /> Add Account
+              </button>
+              <button
               onClick={() => verifyAll.mutate()}
               disabled={verifyAll.isPending}
               className="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg flex items-center gap-2 transition-colors border border-zinc-700 disabled:opacity-50"
@@ -35,26 +50,51 @@ export const Settings: React.FC = () => {
                <RefreshCw size={14} className={verifyAll.isPending ? 'animate-spin' : ''} />
                {verifyAll.isPending ? 'Verifying in background...' : 'Verify All'}
             </button>
+            </div>
           </div>
           <div className="p-6 space-y-4">
             <p className="text-sm text-surface-400">
               Manage your connected accounts for restricted content.
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {PLATFORMS.map((platform) => {
-                const session = authStatus?.find((s) => s.platform_id === platform.id);
-                return (
-                  <AccountCard
-                    key={platform.id}
-                    platformId={platform.id}
-                    name={platform.name}
-                    session={session}
-                  />
-                );
-              })}
-            </div>
+            {connectedPlatforms.length === 0 ? (
+              <div className="text-center py-8 text-surface-500 border-2 border-dashed border-surface-700 rounded-xl">
+                No accounts connected yet. Click "Add Account" to get started.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {connectedPlatforms.map((platform) => {
+                  const session = activeSessions.find((s) => s.platform_id === platform.id);
+                  return (
+                    <AccountCard
+                      key={platform.id}
+                      platformId={platform.id}
+                      name={platform.name}
+                      session={session}
+                    />
+                  );
+                })}
+              </div>
+            )}
           </div>
         </section>
+
+        {showPicker && (
+          <PlatformPickerModal
+            onClose={() => setShowPicker(false)}
+            onSelect={(id) => {
+              setShowPicker(false);
+              setSelectedPlatformId(id);
+            }}
+          />
+        )}
+
+        {selectedPlatformId && selectedPlatform && (
+           <ConnectAccountModal
+              platformId={selectedPlatformId}
+              platformName={selectedPlatform.name}
+              onClose={() => setSelectedPlatformId(null)}
+           />
+        )}
 
         {/* Appearance Section */}
         <section className="bg-surface-800 border border-surface-700 rounded-xl overflow-hidden">
