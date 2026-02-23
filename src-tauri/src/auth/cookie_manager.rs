@@ -146,13 +146,10 @@ impl CookieManager {
                 .unwrap_or(false)
         {
             if platform_id == "tiktok" {
-                if let Some(uid) = &username {
-                    if let Some(handle) =
-                        crate::auth::api::UsernameFetcher::fetch_tiktok_username(&cookies_str, uid)
-                            .await
-                    {
-                        username = Some(handle);
-                    }
+                if let Some(handle) =
+                    crate::auth::api::UsernameFetcher::fetch_tiktok_username(&cookies_str).await
+                {
+                    username = Some(handle);
                 }
             } else if platform_id == "x" || platform_id == "twitter" {
                 if let Some(uid) = &username {
@@ -161,6 +158,12 @@ impl CookieManager {
                     {
                         username = Some(handle);
                     }
+                }
+            } else if platform_id == "youtube" {
+                if let Some(handle) =
+                    crate::auth::api::UsernameFetcher::fetch_youtube_username(&cookies_str).await
+                {
+                    username = Some(handle);
                 }
             }
         }

@@ -237,7 +237,16 @@ pub async fn import_from_browser(
 
             if close_after_extraction {
                 tracing::info!("Closing temporary extraction window");
-                let _ = auth_window.close();
+                let app_handle_clone = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    let app_handle_inner = app_handle_clone.clone();
+                    let _ = app_handle_clone.run_on_main_thread(move || {
+                        if let Some(w) = app_handle_inner.get_webview_window(&auth_window_label) {
+                            let _ = w.close();
+                        }
+                    });
+                });
             }
 
             result

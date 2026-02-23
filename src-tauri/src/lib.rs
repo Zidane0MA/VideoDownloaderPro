@@ -139,8 +139,10 @@ pub fn run() {
         })
         .on_window_event(|window, event| match event {
             WindowEvent::CloseRequested { api, .. } => {
-                window.hide().unwrap();
-                api.prevent_close();
+                if window.label() == "main" {
+                    window.hide().unwrap();
+                    api.prevent_close();
+                }
             }
             _ => {}
         })

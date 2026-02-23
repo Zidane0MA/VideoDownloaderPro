@@ -25,11 +25,7 @@ impl UsernameExtractor {
             }
             "tiktok" => {
                 // 'unique_id' often holds the handle in some contexts
-                // 'user_id' is numeric ID
-                // 'uid_tt' seems to be the user ID in newer sessions
                 find_cookie("unique_id")
-                    .or_else(|| find_cookie("user_id"))
-                    .or_else(|| find_cookie("uid_tt"))
             }
             "x" | "twitter" => {
                 // X header 'twid' contains 'u=123456' (often URL encoded as u%3D123456)
@@ -87,9 +83,7 @@ impl UsernameExtractor {
 
         match platform {
             "instagram" => find_cookie_json("ds_user").or_else(|| find_cookie_json("ds_user_id")),
-            "tiktok" => find_cookie_json("unique_id")
-                .or_else(|| find_cookie_json("user_id"))
-                .or_else(|| find_cookie_json("uid_tt")),
+            "tiktok" => find_cookie_json("unique_id"),
             "x" | "twitter" => {
                 if let Some(twid) = find_cookie_json("twid") {
                     let decoded = twid.replace("%3D", "=");

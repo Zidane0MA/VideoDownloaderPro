@@ -71,17 +71,14 @@ mod tests {
                         );
                         println!("  -> Extracted Username/ID: {:?}", username);
 
-                        if let Some(user_val) = &username {
-                            if session.platform_id == "tiktok" {
-                                println!("  -> Attempting TikTok API fetch for UID: {}", user_val);
-                                let api_user =
-                                    crate::auth::api::UsernameFetcher::fetch_tiktok_username(
-                                        &cookies, user_val,
-                                    )
+                        if session.platform_id == "tiktok" {
+                            println!("  -> Attempting TikTok API fetch (no ID required)...");
+                            let api_user =
+                                crate::auth::api::UsernameFetcher::fetch_tiktok_username(&cookies)
                                     .await;
-                                println!("  -> API Fetched Username: {:?}", api_user);
-                            } else if session.platform_id == "x" || session.platform_id == "twitter"
-                            {
+                            println!("  -> API Fetched Username: {:?}", api_user);
+                        } else if session.platform_id == "x" || session.platform_id == "twitter" {
+                            if let Some(user_val) = &username {
                                 println!("  -> Attempting X API fetch for User ID: {}", user_val);
                                 let api_user = crate::auth::api::UsernameFetcher::fetch_x_username(
                                     &cookies, user_val,
@@ -89,6 +86,15 @@ mod tests {
                                 .await;
                                 println!("  -> API Fetched Username: {:?}", api_user);
                             }
+                        }
+
+                        // YouTube (often doesn't have a simple username cookie)
+                        if session.platform_id == "youtube" {
+                            println!("  -> Attempting YouTube API fetch...");
+                            let api_user =
+                                crate::auth::api::UsernameFetcher::fetch_youtube_username(&cookies)
+                                    .await;
+                            println!("  -> API Fetched Username: {:?}", api_user);
                         }
 
                         if let Some(db_user) = &session.username {
