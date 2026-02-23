@@ -122,7 +122,7 @@ export function ConnectAccountModal({ platformId, platformName, onClose }: Conne
                           <li>Click <strong>Open Login Window</strong> below.</li>
                           <li>Log in to {platformName} in the new window.</li>
                           <li>Once logged in, close the window or return here.</li>
-                          <li>Click <strong>Check Status</strong> to verify.</li>
+                          <li>Click <strong>Save Session</strong> to complete.</li>
                       </ol>
                   </div>
                   
@@ -143,7 +143,7 @@ export function ConnectAccountModal({ platformId, platformName, onClose }: Conne
                          {importFromBrowser.isPending ? (
                              <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
                          ) : (
-                             '2. Check Status / Import Cookies'
+                             '2. Save Session (Extract Cookies)'
                          )}
                       </button>
                   </div>

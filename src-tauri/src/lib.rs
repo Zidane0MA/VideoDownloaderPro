@@ -164,6 +164,8 @@ pub fn run() {
             commands::auth::delete_session,
             commands::auth::import_from_browser,
             commands::auth::open_login_window,
+            commands::auth::verify_session_status,
+            commands::auth::verify_all_sessions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

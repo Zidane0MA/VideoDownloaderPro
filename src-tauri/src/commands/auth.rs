@@ -372,3 +372,100 @@ pub async fn open_login_window(
 
     Ok(())
 }
+
+#[tauri::command]
+pub async fn verify_session_status(
+    window: Window,
+    state: State<'_, AppState>,
+    cookie_manager: State<'_, Arc<CookieManager>>,
+    platform_id: String,
+) -> Result<bool, String> {
+    let cookies_str = cookie_manager
+        .get_netscape_cookies(&platform_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if let Some(cookies) = cookies_str {
+        let is_valid = crate::auth::api::UsernameFetcher::check_session_validity(&platform_id, &cookies)
+            .await
+            .unwrap_or(false);
+
+        use crate::entity::platform_session;
+        use sea_orm::{EntityTrait, Set, ActiveModelTrait};
+        use chrono::Utc;
+
+        if let Ok(Some(session)) = platform_session::Entity::find_by_id(&platform_id).one(&state.db).await {
+            let mut active_session: platform_session::ActiveModel = session.into();
+            active_session.status = Set(if is_valid { "ACTIVE".to_string() } else { "EXPIRED".to_string() });
+            active_session.last_verified = Set(Some(Utc::now()));
+            if !is_valid {
+                active_session.error_message = Set(Some("Session expired. Please reconnect.".to_string()));
+            } else {
+                active_session.error_message = Set(None);
+            }
+            active_session.updated_at = Set(Utc::now());
+            
+            let _ = active_session.update(&state.db).await;
+        }
+
+        let _ = window.emit("session-status-changed", &platform_id);
+        Ok(is_valid)
+    } else {
+        Err("Session not found".into())
+    }
+}
+
+#[tauri::command]
+pub async fn verify_all_sessions(
+    window: Window,
+    state: State<'_, AppState>,
+    cookie_manager: State<'_, Arc<CookieManager>>,
+) -> Result<(), String> {
+    use crate::entity::platform_session;
+    use sea_orm::EntityTrait;
+
+    let sessions = platform_session::Entity::find()
+        .all(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // We spawn a detached task so we don't block the UI while it sequentially checks
+    let window_clone = window.clone();
+    let db_clone = state.db.clone();
+    let cm_clone = (*cookie_manager).clone();
+
+    tauri::async_runtime::spawn(async move {
+        for session in sessions {
+            if session.status != "ACTIVE" && session.status != "EXPIRED" {
+                continue;
+            }
+            if let Ok(Some(cookies)) = cm_clone.get_netscape_cookies(&session.platform_id).await {
+                let is_valid = crate::auth::api::UsernameFetcher::check_session_validity(&session.platform_id, &cookies)
+                    .await
+                    .unwrap_or(false);
+
+                use sea_orm::{Set, ActiveModelTrait};
+                use chrono::Utc;
+
+                let mut active_session: platform_session::ActiveModel = session.clone().into();
+                active_session.status = Set(if is_valid { "ACTIVE".to_string() } else { "EXPIRED".to_string() });
+                active_session.last_verified = Set(Some(Utc::now()));
+                if !is_valid {
+                    active_session.error_message = Set(Some("Session expired. Please reconnect.".to_string()));
+                } else {
+                    active_session.error_message = Set(None);
+                }
+                active_session.updated_at = Set(Utc::now());
+                
+                let _ = active_session.update(&db_clone).await;
+
+                let _ = window_clone.emit("session-status-changed", &session.platform_id);
+            }
+            
+            // Sleep to avoid rate limits
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+    });
+
+    Ok(())
+}

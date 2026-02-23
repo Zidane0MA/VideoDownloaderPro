@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { Moon, Sun, Monitor, Info, Users } from 'lucide-react';
+import { Moon, Sun, Monitor, Info, Users, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AccountCard } from './settings/AccountCard';
 import { PLATFORMS } from '../types/auth';
-import { useAuthStatus } from '../hooks/useAuth';
+import { useAuthStatus, useVerifyAllSessions } from '../hooks/useAuth';
 
 export const Settings: React.FC = () => {
   const { t } = useTranslation();
   const { data: authStatus } = useAuthStatus();
+  const verifyAll = useVerifyAllSessions();
   // Placeholder for theme state - in a real app this would come from a theme store/context
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('dark'); 
 
@@ -26,6 +27,14 @@ export const Settings: React.FC = () => {
               <Users className="w-4 h-4 text-brand-400" />
               {t('settings.accounts', 'Accounts')}
             </h3>
+            <button
+              onClick={() => verifyAll.mutate()}
+              disabled={verifyAll.isPending}
+              className="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg flex items-center gap-2 transition-colors border border-zinc-700 disabled:opacity-50"
+            >
+               <RefreshCw size={14} className={verifyAll.isPending ? 'animate-spin' : ''} />
+               {verifyAll.isPending ? 'Verifying in background...' : 'Verify All'}
+            </button>
           </div>
           <div className="p-6 space-y-4">
             <p className="text-sm text-surface-400">

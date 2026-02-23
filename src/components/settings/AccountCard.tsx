@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { PlatformSession } from '../../types/auth';
-import { useDeleteSession } from '../../hooks/useAuth';
+import { useDeleteSession, useVerifySession } from '../../hooks/useAuth';
 import { ConnectAccountModal } from './ConnectAccountModal';
 import { DisconnectAccountModal } from './DisconnectAccountModal';
 import { 
@@ -8,7 +8,8 @@ import {
   XCircle, 
   LogOut, 
   Upload,
-  AlertCircle 
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 
 interface AccountCardProps {
@@ -21,6 +22,7 @@ export function AccountCard({ platformId, name, session }: AccountCardProps) {
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
   const deleteSession = useDeleteSession();
+  const verifySession = useVerifySession();
 
   const isConnected = session?.status === 'ACTIVE';
   const isExpired = session?.status === 'EXPIRED';
@@ -38,12 +40,15 @@ export function AccountCard({ platformId, name, session }: AccountCardProps) {
     <>
       <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4 flex items-center justify-between group hover:border-zinc-600 transition-colors">
         <div className="flex items-center gap-4">
-          {/* Platform Icon Placeholders - in real app use SVGs or mapped icons */}
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+          {/* Avatar / Icon */}
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0 ${
             isConnected ? 'bg-green-500/10 text-green-500' : 'bg-zinc-700 text-zinc-400'
           }`}>
-             {/* Simple initial letter fallback if icons missing */}
-             <span className="font-bold text-lg">{name.charAt(0)}</span>
+             {session?.avatar_url ? (
+               <img src={session.avatar_url} alt={name} className="w-full h-full object-cover" />
+             ) : (
+               <span className="font-bold text-lg">{name.charAt(0)}</span>
+             )}
           </div>
 
           <div>
@@ -55,7 +60,7 @@ export function AccountCard({ platformId, name, session }: AccountCardProps) {
                   {session?.username ? `@${session.username}` : 'Connected'}
                 </span>
               ) : isExpired ? (
-                <span className="text-xs flex items-center gap-1.5 text-orange-400 bg-orange-400/10 px-2 py-0.5 rounded-full">
+                <span className="text-xs flex items-center gap-1.5 text-orange-400 bg-orange-400/10 px-2 py-0.5 rounded-full" title={session?.error_message || "Session Expired"}>
                   <AlertCircle size={12} />
                   Expired
                 </span>
@@ -66,9 +71,9 @@ export function AccountCard({ platformId, name, session }: AccountCardProps) {
                 </span>
               )}
               
-              {isConnected && session?.last_verified && (
-                 <span className="text-xs text-zinc-500 ml-2">
-                    • {new Date(session.last_verified).toLocaleDateString()}
+              {(isConnected || isExpired) && session?.last_verified && (
+                 <span className="text-[10px] text-zinc-500">
+                    Checked {new Date(session.last_verified).toLocaleDateString()}
                  </span>
               )}
             </div>
@@ -77,13 +82,41 @@ export function AccountCard({ platformId, name, session }: AccountCardProps) {
 
         <div className="flex items-center gap-2">
           {isConnected ? (
-            <button
-              onClick={() => setShowDisconnectModal(true)}
-              className="p-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-700 rounded-lg transition-colors"
-              title="Disconnect"
-            >
-              <LogOut size={18} />
-            </button>
+            <>
+              <button
+                onClick={() => verifySession.mutate(platformId)}
+                disabled={verifySession.isPending}
+                className="p-2 text-zinc-400 hover:text-blue-400 hover:bg-zinc-700 rounded-lg transition-colors disabled:opacity-50"
+                title="Verify Session"
+              >
+                <RefreshCw size={18} className={verifySession.isPending ? 'animate-spin' : ''} />
+              </button>
+              <button
+                onClick={() => setShowDisconnectModal(true)}
+                className="p-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-700 rounded-lg transition-colors"
+                title="Disconnect"
+              >
+                <LogOut size={18} />
+              </button>
+            </>
+          ) : isExpired ? (
+            <>
+              <button
+                onClick={() => setShowConnectModal(true)}
+                className="px-3 py-1.5 text-xs bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 rounded-lg flex items-center gap-1.5 transition-colors border border-orange-500/20"
+                title="Session expired. Reconnect."
+              >
+                <Upload size={14} />
+                Reconnect
+              </button>
+              <button
+                onClick={() => setShowDisconnectModal(true)}
+                className="p-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-700 rounded-lg transition-colors"
+                title="Remove"
+              >
+                <LogOut size={18} />
+              </button>
+            </>
           ) : (
             <button
               onClick={() => setShowConnectModal(true)}

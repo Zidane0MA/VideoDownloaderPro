@@ -88,3 +88,23 @@ export const useImportFromBrowser = () => {
     },
   });
 };
+
+// Verify Session
+export const useVerifySession = () => {
+  return useMutation({
+    mutationFn: async (platform_id: string) => {
+      const isValid = await invoke<boolean>('verify_session_status', { platformId: platform_id });
+      return isValid;
+    },
+    // The event listener in useAuthStatus should invalidate, but we can also do it here
+  });
+};
+
+// Verify All Sessions
+export const useVerifyAllSessions = () => {
+  return useMutation({
+    mutationFn: async () => {
+      await invoke('verify_all_sessions');
+    },
+  });
+};

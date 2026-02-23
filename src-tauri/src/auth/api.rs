@@ -311,4 +311,52 @@ impl UsernameFetcher {
 
         None
     }
+
+    /// Verifies if a session is still valid by making a lightweight request.
+    pub async fn check_session_validity(platform_id: &str, cookies: &str) -> Result<bool, String> {
+        let is_valid = match platform_id {
+            "tiktok" => Self::fetch_tiktok_username(cookies).await.is_some(),
+            "youtube" => Self::fetch_youtube_username(cookies).await.is_some(),
+            "x" | "twitter" => Self::fetch_x_username(cookies, "").await.is_some(),
+            "instagram" => {
+                let client = Client::builder()
+                    .timeout(std::time::Duration::from_secs(10))
+                    .build()
+                    .map_err(|e| e.to_string())?;
+
+                let mut headers = HeaderMap::new();
+                headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
+                let cookie_header_value = cookies
+                    .lines()
+                    .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+                    .filter_map(|line| {
+                        let parts: Vec<&str> = line.split('\t').collect();
+                        if parts.len() >= 7 {
+                            Some(format!("{}={}", parts[5], parts[6]))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<String>>()
+                    .join("; ");
+
+                if let Ok(val) = HeaderValue::from_str(&cookie_header_value) {
+                    headers.insert(COOKIE, val);
+                }
+
+                if let Ok(res) = client
+                    .get("https://www.instagram.com/")
+                    .headers(headers)
+                    .send()
+                    .await
+                {
+                    res.status().is_success() && !res.url().path().contains("login")
+                } else {
+                    false
+                }
+            }
+            _ => true, // Fallback
+        };
+        Ok(is_valid)
+    }
 }

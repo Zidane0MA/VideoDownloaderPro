@@ -2,9 +2,11 @@ export interface PlatformSession {
   platform_id: string;
   status: 'ACTIVE' | 'EXPIRED' | 'NONE';
   username?: string;
+  avatar_url?: string;
   cookie_method: string;
   expires_at?: string; // ISO string
   last_verified?: string; // ISO string
+  error_message?: string;
   created_at: string;
   updated_at: string;
 }

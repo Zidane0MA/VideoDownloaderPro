@@ -176,10 +176,12 @@ impl CookieManager {
             platform_id: Set(platform_id.clone()),
             status: Set("ACTIVE".to_string()),
             username: Set(username),
+            avatar_url: Set(None),
             encrypted_cookies: Set(Some(encrypted_data)),
             cookie_method: Set(method),
             expires_at: Set(None), // TODO: Parse expiration from cookies if possible
             last_verified: Set(Some(now)),
+            error_message: Set(None),
             updated_at: Set(now),
             created_at: Set(now), // sea-orm handles ignore on update for created_at if configured, or we can query first
         };
@@ -193,10 +195,11 @@ impl CookieManager {
                     .update_columns([
                         platform_session::Column::Status,
                         platform_session::Column::Username,
+                        platform_session::Column::AvatarUrl,
                         platform_session::Column::EncryptedCookies,
                         platform_session::Column::CookieMethod,
-                        platform_session::Column::CookieMethod,
                         platform_session::Column::LastVerified,
+                        platform_session::Column::ErrorMessage,
                         platform_session::Column::UpdatedAt,
                     ])
                     .to_owned(),

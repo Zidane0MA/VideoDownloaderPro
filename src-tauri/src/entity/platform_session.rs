@@ -8,11 +8,13 @@ pub struct Model {
     pub platform_id: String,
     pub status: String,
     pub username: Option<String>,
+    pub avatar_url: Option<String>,
     #[sea_orm(column_type = "VarBinary(StringLen::None)")]
     pub encrypted_cookies: Option<Vec<u8>>,
     pub cookie_method: String,
     pub expires_at: Option<DateTimeUtc>,
     pub last_verified: Option<DateTimeUtc>,
+    pub error_message: Option<String>,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }
