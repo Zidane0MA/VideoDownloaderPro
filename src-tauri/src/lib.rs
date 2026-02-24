@@ -170,6 +170,7 @@ pub fn run() {
             commands::settings::get_settings,
             commands::settings::update_setting,
             commands::settings::select_download_path,
+            commands::wall::get_posts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

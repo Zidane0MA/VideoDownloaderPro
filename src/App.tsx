@@ -4,6 +4,7 @@ import { Download, Images, Settings as SettingsIcon, Zap, Plus } from "lucide-re
 import { AddDownloadModal } from "./components/AddDownloadModal";
 import { DownloadsList } from "./components/DownloadsList";
 import { Settings } from "./features/settings/Settings";
+import { Wall } from "./features/wall/Wall";
 
 type View = 'downloads' | 'wall' | 'settings';
 
@@ -59,8 +60,8 @@ function App() {
               key={item.id}
               onClick={() => setCurrentView(item.id as View)}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${currentView === item.id
-                  ? "border-brand-500 text-brand-400"
-                  : "border-transparent text-surface-200/60 hover:text-surface-100"
+                ? "border-brand-500 text-brand-400"
+                : "border-transparent text-surface-200/60 hover:text-surface-100"
                 }`}
             >
               <item.icon className="w-4 h-4" />
@@ -98,10 +99,7 @@ function App() {
         )}
 
         {currentView === 'wall' && (
-          <div className="text-center py-20 text-surface-400">
-            <h2 className="text-xl font-semibold text-white mb-2">The Wall</h2>
-            <p>Gallery view coming soon...</p>
-          </div>
+          <Wall />
         )}
 
         {currentView === 'settings' && (
