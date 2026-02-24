@@ -20,7 +20,13 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' tauri: 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: asset: http://asset.localhost tauri:; media-src 'self' asset: http://asset.localhost tauri:; connect-src 'self' ipc: http://ipc.localhost wss://*;",
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "**"
+        ]
+      }
     }
   },
   "bundle": {

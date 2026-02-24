@@ -1,8 +1,8 @@
 use crate::download::DownloadWorker;
-use crate::entity::download_task;
+use crate::entity::{download_task, media, post};
 use crate::AppState;
 use chrono::Utc;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{Mutex, Notify, Semaphore};
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 /// Base delay for exponential backoff on retries.
 const RETRY_BASE_DELAY_SECS: u64 = 5;
@@ -250,6 +251,90 @@ impl DownloadQueue {
                         })
                         .exec(&db)
                         .await;
+
+                        // --- Update linked Post status to COMPLETED & create Media row ---
+                        // Re-read the task to get the post_id
+                        if let Ok(Some(updated_task)) =
+                            download_task::Entity::find_by_id(&task_id).one(&db).await
+                        {
+                            if let Some(ref post_id) = updated_task.post_id {
+                                // 1. Mark post as COMPLETED
+                                let _ = post::Entity::update(post::ActiveModel {
+                                    id: Set(post_id.clone()),
+                                    status: Set("COMPLETED".to_string()),
+                                    downloaded_at: Set(Some(Utc::now())),
+                                    ..Default::default()
+                                })
+                                .exec(&db)
+                                .await;
+
+                                // 2. Create a media row for the downloaded file
+                                if let Some(ref fname) = res.filename {
+                                    let file_path = download_dir.join(fname);
+                                    let ext = file_path
+                                        .extension()
+                                        .and_then(|e| e.to_str())
+                                        .unwrap_or("");
+                                    let media_type = match ext.to_lowercase().as_str() {
+                                        "mp4" | "webm" | "mkv" | "avi" | "mov" | "flv" => "VIDEO",
+                                        "mp3" | "m4a" | "wav" | "aac" | "ogg" | "opus" => "AUDIO",
+                                        "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" => "IMAGE",
+                                        _ => "VIDEO",
+                                    };
+
+                                    let media_id = Uuid::new_v4().to_string();
+
+                                    let media_model = media::ActiveModel {
+                                        id: Set(media_id.clone()),
+                                        post_id: Set(post_id.clone()),
+                                        media_type: Set(media_type.to_string()),
+                                        file_path: Set(file_path.to_string_lossy().to_string()),
+                                        order_index: Set(0),
+                                        file_size: Set(res.total_bytes.map(|b| b as i32)),
+                                        ..Default::default()
+                                    };
+
+                                    if let Err(e) = media_model.insert(&db).await {
+                                        tracing::error!(
+                                            "Failed to create media row for post {}: {}",
+                                            post_id,
+                                            e
+                                        );
+                                    } else {
+                                        tracing::info!(
+                                            "Media row created for post {} -> {}",
+                                            post_id,
+                                            file_path.display()
+                                        );
+
+                                        // 3. Process thumbnails (best-effort):
+                                        //    - Find yt-dlp's platform thumbnail (--write-thumbnail)
+                                        //    - Resize to 300px for Wall
+                                        //    - Fallback: extract frame from video
+                                        if let Ok(ffmpeg) = crate::sidecar::get_binary_path(
+                                            &app,
+                                            crate::sidecar::types::SidecarBinary::Ffmpeg,
+                                        ) {
+                                            let thumbs =
+                                                crate::download::post_process::process_thumbnails(
+                                                    &ffmpeg, &file_path, media_type,
+                                                )
+                                                .await;
+
+                                            // Update media row with thumbnail paths
+                                            let _ = media::Entity::update(media::ActiveModel {
+                                                id: Set(media_id.clone()),
+                                                thumbnail_path: Set(thumbs.thumbnail_path),
+                                                thumbnail_sm_path: Set(thumbs.thumbnail_sm_path),
+                                                ..Default::default()
+                                            })
+                                            .exec(&db)
+                                            .await;
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         let _ = app.emit("download-completed", &task_id);
                     }

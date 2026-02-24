@@ -1,4 +1,5 @@
 pub mod parser;
+pub mod post_process;
 pub mod worker;
 
 #[cfg(test)]

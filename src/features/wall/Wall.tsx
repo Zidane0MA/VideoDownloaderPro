@@ -2,7 +2,8 @@ import { useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { usePostsInfinite } from './api/usePostsInfinite';
 import { useDownloadCompletionSync } from './api/useDownloadCompletionSync';
-import { WallGrid, useResponsiveColumns } from './components/WallGrid';
+import { WallGrid } from './components/WallGrid';
+import { useResponsiveColumns } from './hooks/useResponsiveColumns';
 import { Loader2, Image as ImageIcon } from 'lucide-react';
 
 export function Wall() {
@@ -67,14 +68,12 @@ export function Wall() {
     }
 
     return (
-        <div className="h-[calc(100vh-140px)] flex flex-col">
-            <div className="flex-1 overflow-hidden relative">
-                <WallGrid posts={allPosts} columnCount={columnCount} gap={16} />
+        <div className="h-[calc(100vh-140px)] flex flex-col relative">
+            <WallGrid posts={allPosts} columnCount={columnCount} gap={16} />
 
-                {/* Infinite Scroll Sentinel - Placed at bottom of container */}
-                <div ref={observerRef} className="h-10 w-full flex items-center justify-center text-surface-400 absolute bottom-0 left-0 pointer-events-none">
-                    {isFetchingNextPage && <Loader2 className="w-5 h-5 animate-spin text-brand-500" />}
-                </div>
+            {/* Infinite Scroll Sentinel - Placed at bottom of container */}
+            <div ref={observerRef} className="h-10 w-full flex items-center justify-center text-surface-400 absolute bottom-0 left-0 pointer-events-none">
+                {isFetchingNextPage && <Loader2 className="w-5 h-5 animate-spin text-brand-500" />}
             </div>
         </div>
     );

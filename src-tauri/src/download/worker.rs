@@ -244,6 +244,10 @@ impl DownloadWorker {
             .arg(&output_dir)
             .arg("--output")
             .arg("%(title)s.%(ext)s")
+            // Download the original platform thumbnail and convert to JPG
+            .arg("--write-thumbnail")
+            .arg("--convert-thumbnails")
+            .arg("jpg")
             // Rate limit for debugging/stability (5MB/s)
             .arg("--limit-rate")
             .arg("5M")
