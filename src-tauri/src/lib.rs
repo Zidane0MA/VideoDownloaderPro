@@ -56,6 +56,7 @@ pub fn run() {
     tracing::info!("Logs are being written to ./logs");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
@@ -166,6 +167,9 @@ pub fn run() {
             commands::auth::open_login_window,
             commands::auth::verify_session_status,
             commands::auth::verify_all_sessions,
+            commands::settings::get_settings,
+            commands::settings::update_setting,
+            commands::settings::select_download_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

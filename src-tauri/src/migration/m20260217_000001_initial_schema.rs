@@ -94,11 +94,7 @@ impl MigrationTrait for Migration {
                     .col(string_null(Posts::Title))
                     .col(string_null(Posts::Description))
                     .col(string(Posts::OriginalUrl).not_null())
-                    .col(
-                        string(Posts::Status)
-                            .default("PENDING")
-                            .not_null(),
-                    )
+                    .col(string(Posts::Status).default("PENDING").not_null())
                     .col(timestamp_null(Posts::PostedAt))
                     .col(timestamp_null(Posts::DownloadedAt))
                     .col(timestamp_null(Posts::DeletedAt))
@@ -164,11 +160,7 @@ impl MigrationTrait for Migration {
                     .col(string(DownloadTasks::Id).primary_key())
                     .col(string(DownloadTasks::Url).not_null())
                     .col(string_null(DownloadTasks::PostId))
-                    .col(
-                        string(DownloadTasks::Status)
-                            .default("QUEUED")
-                            .not_null(),
-                    )
+                    .col(string(DownloadTasks::Status).default("QUEUED").not_null())
                     .col(
                         integer(DownloadTasks::Priority)
                             .default(Value::Int(Some(0)))
@@ -233,12 +225,12 @@ impl MigrationTrait for Migration {
                     .table(PlatformSessions::Table)
                     .if_not_exists()
                     .col(string(PlatformSessions::PlatformId).primary_key())
+                    .col(string(PlatformSessions::Status).default("NONE").not_null())
                     .col(
-                        string(PlatformSessions::Status)
-                            .default("NONE")
-                            .not_null(),
+                        ColumnDef::new(PlatformSessions::EncryptedCookies)
+                            .binary()
+                            .null(),
                     )
-                    .col(ColumnDef::new(PlatformSessions::EncryptedCookies).binary().null())
                     .col(
                         string(PlatformSessions::CookieMethod)
                             .default("webview")
@@ -341,14 +333,22 @@ impl MigrationTrait for Migration {
         // ── Seed: Platforms ───────────────────────────────────────
         let insert_platforms = Query::insert()
             .into_table(Platforms::Table)
-            .columns([
-                Platforms::Id,
-                Platforms::Name,
-                Platforms::BaseUrl,
+            .columns([Platforms::Id, Platforms::Name, Platforms::BaseUrl])
+            .values_panic([
+                "youtube".into(),
+                "YouTube".into(),
+                "https://www.youtube.com".into(),
             ])
-            .values_panic(["youtube".into(), "YouTube".into(), "https://www.youtube.com".into()])
-            .values_panic(["tiktok".into(), "TikTok".into(), "https://www.tiktok.com".into()])
-            .values_panic(["instagram".into(), "Instagram".into(), "https://www.instagram.com".into()])
+            .values_panic([
+                "tiktok".into(),
+                "TikTok".into(),
+                "https://www.tiktok.com".into(),
+            ])
+            .values_panic([
+                "instagram".into(),
+                "Instagram".into(),
+                "https://www.instagram.com".into(),
+            ])
             .values_panic(["x".into(), "X (Twitter)".into(), "https://x.com".into()])
             .to_owned();
 

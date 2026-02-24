@@ -12,6 +12,7 @@
 
 ### Backend (Rust)
 *   **Runtime:** Tauri v2
+*   **Plugins:** `tauri-plugin-dialog` (File picker), `tauri-plugin-shell`, `tauri-plugin-opener`
 *   **Database ORM:** Sea-ORM (Async, SQLite)
 *   **Serialization:** Serde
 *   **Async:** Tokio

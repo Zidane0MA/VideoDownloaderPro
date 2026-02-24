@@ -30,10 +30,10 @@
     - [x] **Validation**: Fix False Positive Auth (Empty/Guest Cookies)
     - [x] **Feature**: Display Username & Avatar in Account Card (Extraction for IG/TikTok/X)
 
-### Phase 4: Frontend - Download Manager (Partial)
+### Phase 4: Frontend - Download Manager (Completed)
 - [x] Active Downloads UI
 - [x] URL Input & Preview
-- [ ] Settings Page (Advanced options missing: Path, etc.)
+- [x] Settings Page (Path, Concurrency, Language, Trash Config)
 
 ### Phase 5: Frontend - Gallery (Wall)
 - [ ] Virtualized Grid
