@@ -21,6 +21,7 @@ interface AccountCardProps {
 export function AccountCard({ platformId, name, session }: AccountCardProps) {
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const deleteSession = useDeleteSession();
   const verifySession = useVerifySession();
 
@@ -44,8 +45,14 @@ export function AccountCard({ platformId, name, session }: AccountCardProps) {
           <div className={`w-10 h-10 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0 ${
             isConnected ? 'bg-green-500/10 text-green-500' : 'bg-zinc-700 text-zinc-400'
           }`}>
-             {session?.avatar_url ? (
-               <img src={session.avatar_url} alt={name} className="w-full h-full object-cover" />
+             {session?.avatar_url && !imageError ? (
+               <img 
+                 src={session.avatar_url} 
+                 alt={name} 
+                 className="w-full h-full object-cover" 
+                 referrerPolicy="no-referrer"
+                 onError={() => setImageError(true)}
+               />
              ) : (
                <span className="font-bold text-lg">{name.charAt(0)}</span>
              )}

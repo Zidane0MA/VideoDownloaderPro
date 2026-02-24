@@ -166,16 +166,20 @@ pub async fn import_from_browser(
     let cookies_content = if browser == "webview" {
         #[cfg(target_os = "windows")]
         {
-            let auth_window_label = format!("auth_{}", platform_id);
+            let existing_auth_label = format!("auth_{}", platform_id);
             let mut close_after_extraction = false;
+            // Track the actual label of the window we use for extraction
+            let actual_window_label: String;
 
-            let auth_window = if let Some(w) = app_handle.get_webview_window(&auth_window_label) {
-                tracing::info!("Found existing auth window {}, using it for extraction", auth_window_label);
+            let auth_window = if let Some(w) = app_handle.get_webview_window(&existing_auth_label) {
+                tracing::info!("Found existing auth window {}, using it for extraction", existing_auth_label);
+                actual_window_label = existing_auth_label;
                 w
             } else {
                 let unique_label = format!("auth_extract_{}_{}", platform_id, uuid::Uuid::new_v4());
                 tracing::info!("Auth window not found, creating hidden window {} for extraction", unique_label);
                 close_after_extraction = true;
+                actual_window_label = unique_label.clone();
                 
                 let app_local_data = app_handle
                     .path()
@@ -217,7 +221,9 @@ pub async fn import_from_browser(
                     // We assume ABI compatibility
                     // Use transmute_copy to handle bridging differing ICoreWebView2 types
                     let webview2: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_2 = {
-                        let unknown: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2 =
+                        // WARN: Use ManuallyDrop so we don't accidentally call Release() on the COM object
+                        // when the `unknown` wrapper falls out of scope, which causes 0xc000041d!
+                        let unknown: std::mem::ManuallyDrop<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2> =
                             std::mem::transmute_copy(&raw_ptr);
                         unknown.cast().unwrap()
                     };
@@ -235,15 +241,37 @@ pub async fn import_from_browser(
             // Wait for result
             let result = rx.await.map_err(|e| format!("Cookie extraction channel error: {}", e))??;
 
+            // Navigate to about:blank to stop any media playback immediately
+            tracing::info!("Navigating window {} to about:blank to stop media...", actual_window_label);
+            let _ = auth_window.eval("window.location.href = 'about:blank';");
+
             if close_after_extraction {
-                tracing::info!("Closing temporary extraction window");
+                // This was a temporary hidden window — destroy it after a short delay
+                tracing::info!("Scheduling destruction of temporary extraction window: {}", actual_window_label);
                 let app_handle_clone = app_handle.clone();
+                let label_for_close = actual_window_label.clone();
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
                     let app_handle_inner = app_handle_clone.clone();
                     let _ = app_handle_clone.run_on_main_thread(move || {
-                        if let Some(w) = app_handle_inner.get_webview_window(&auth_window_label) {
-                            let _ = w.close();
+                        if let Some(w) = app_handle_inner.get_webview_window(&label_for_close) {
+                            tracing::info!("Destroying temporary extraction window: {}", label_for_close);
+                            let _ = w.destroy();
+                        }
+                    });
+                });
+            } else {
+                // This was the user's login window — close it now that extraction is done
+                tracing::info!("Closing user login window after extraction: {}", actual_window_label);
+                let app_handle_clone = app_handle.clone();
+                let label_for_close = actual_window_label.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    let app_handle_inner = app_handle_clone.clone();
+                    let _ = app_handle_clone.run_on_main_thread(move || {
+                        if let Some(w) = app_handle_inner.get_webview_window(&label_for_close) {
+                            tracing::info!("Destroying user login window: {}", label_for_close);
+                            let _ = w.destroy();
                         }
                     });
                 });

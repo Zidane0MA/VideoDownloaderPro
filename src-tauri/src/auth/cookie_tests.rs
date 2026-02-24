@@ -4,7 +4,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_extract_from_local_db() -> Result<(), Box<dyn std::error::Error>> {
-        use crate::auth::{encryption, extractor::UsernameExtractor};
+        use crate::auth::encryption;
         use crate::entity::platform_session;
         use sea_orm::{Database, EntityTrait};
         use std::path::PathBuf;
@@ -65,12 +65,6 @@ mod tests {
                             }
                         }
 
-                        let username = UsernameExtractor::extract_from_netscape(
-                            &cookies,
-                            &session.platform_id,
-                        );
-                        println!("  -> Extracted Username/ID: {:?}", username);
-
                         if session.platform_id == "tiktok" {
                             println!("  -> Attempting TikTok API fetch (no ID required)...");
                             let api_user =
@@ -78,14 +72,10 @@ mod tests {
                                     .await;
                             println!("  -> API Fetched Username: {:?}", api_user);
                         } else if session.platform_id == "x" || session.platform_id == "twitter" {
-                            if let Some(user_val) = &username {
-                                println!("  -> Attempting X API fetch for User ID: {}", user_val);
-                                let api_user = crate::auth::api::UsernameFetcher::fetch_x_username(
-                                    &cookies, user_val,
-                                )
-                                .await;
-                                println!("  -> API Fetched Username: {:?}", api_user);
-                            }
+                            println!("  -> Attempting X API fetch");
+                            let api_user =
+                                crate::auth::api::UsernameFetcher::fetch_x_username(&cookies).await;
+                            println!("  -> API Fetched Username: {:?}", api_user);
                         }
 
                         // YouTube (often doesn't have a simple username cookie)

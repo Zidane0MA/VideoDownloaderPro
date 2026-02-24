@@ -1,5 +1,4 @@
 use super::encryption::{decrypt_string, encrypt_string};
-use super::extractor::UsernameExtractor;
 use crate::entity::platform_session;
 use chrono::Utc;
 
@@ -135,40 +134,54 @@ impl CookieManager {
         self.validate_session_cookies(&platform_id, &cookies_str)
             .await?;
 
-        // Extract username if possible
-        let mut username = UsernameExtractor::extract_from_netscape(&cookies_str, &platform_id);
+        // Extract username and avatar via network API
+        let mut username: Option<String> = None;
+        let mut avatar_url: Option<String> = None;
 
-        // API Fallback: If username is missing or looks like an ID, try fetching it
-        if username.is_none()
-            || username
-                .as_ref()
-                .map(|u| u.chars().all(char::is_numeric))
-                .unwrap_or(false)
-        {
-            if platform_id == "tiktok" {
-                if let Some(handle) =
-                    crate::auth::api::UsernameFetcher::fetch_tiktok_username(&cookies_str).await
-                {
-                    username = Some(handle);
-                }
-            } else if platform_id == "x" || platform_id == "twitter" {
-                if let Some(uid) = &username {
-                    if let Some(handle) =
-                        crate::auth::api::UsernameFetcher::fetch_x_username(&cookies_str, uid).await
-                    {
-                        username = Some(handle);
-                    }
-                }
-            } else if platform_id == "youtube" {
-                if let Some(handle) =
-                    crate::auth::api::UsernameFetcher::fetch_youtube_username(&cookies_str).await
-                {
-                    username = Some(handle);
-                }
+        if platform_id == "tiktok" {
+            if let Some((handle, avatar)) =
+                crate::auth::api::UsernameFetcher::fetch_tiktok_username(&cookies_str).await
+            {
+                username = Some(handle);
+                avatar_url = avatar;
+            }
+        } else if platform_id == "x" || platform_id == "twitter" {
+            if let Some((handle, avatar)) =
+                crate::auth::api::UsernameFetcher::fetch_x_username(&cookies_str).await
+            {
+                username = Some(handle);
+                avatar_url = avatar;
+            }
+        } else if platform_id == "youtube" {
+            if let Some((handle, avatar)) =
+                crate::auth::api::UsernameFetcher::fetch_youtube_username(&cookies_str).await
+            {
+                username = Some(handle);
+                avatar_url = avatar;
             }
         }
 
         let encrypted_data = encrypt_string(&cookies_str)?;
+
+        // Parse expiration from cookies
+        // format is domain \t flag \t path \t secure \t expiration \t name \t value
+        let mut max_expiration: Option<i64> = None;
+        for line in cookies_str.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 7 {
+                if let Ok(exp) = parts[4].parse::<i64>() {
+                    if exp > 0 {
+                        max_expiration = Some(max_expiration.unwrap_or(0).max(exp));
+                    }
+                }
+            }
+        }
+        let parsed_expires_at =
+            max_expiration.and_then(|exp| chrono::DateTime::from_timestamp(exp, 0));
 
         let now = Utc::now();
 
@@ -176,10 +189,10 @@ impl CookieManager {
             platform_id: Set(platform_id.clone()),
             status: Set("ACTIVE".to_string()),
             username: Set(username),
-            avatar_url: Set(None),
+            avatar_url: Set(avatar_url),
             encrypted_cookies: Set(Some(encrypted_data)),
             cookie_method: Set(method),
-            expires_at: Set(None), // TODO: Parse expiration from cookies if possible
+            expires_at: Set(parsed_expires_at),
             last_verified: Set(Some(now)),
             error_message: Set(None),
             updated_at: Set(now),
@@ -198,6 +211,7 @@ impl CookieManager {
                         platform_session::Column::AvatarUrl,
                         platform_session::Column::EncryptedCookies,
                         platform_session::Column::CookieMethod,
+                        platform_session::Column::ExpiresAt,
                         platform_session::Column::LastVerified,
                         platform_session::Column::ErrorMessage,
                         platform_session::Column::UpdatedAt,

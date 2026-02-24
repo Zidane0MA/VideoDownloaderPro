@@ -6,7 +6,7 @@ pub struct UsernameFetcher;
 
 impl UsernameFetcher {
     /// Attempts to fetch the TikTok username (unique_id) using the session cookies and Passport API.
-    pub async fn fetch_tiktok_username(cookies: &str) -> Option<String> {
+    pub async fn fetch_tiktok_username(cookies: &str) -> Option<(String, Option<String>)> {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .build()
@@ -60,16 +60,30 @@ impl UsernameFetcher {
             };
 
             if let Some(data) = json.get("data") {
+                let mut found_username = None;
+                let mut found_avatar = None;
+
+                if let Some(avatar_url) = data.get("avatar_url").and_then(|v| v.as_str()) {
+                    if !avatar_url.is_empty() {
+                        found_avatar = Some(avatar_url.to_string());
+                    }
+                }
                 if let Some(username) = data.get("username").and_then(|v| v.as_str()) {
                     if !username.is_empty() {
-                        return Some(username.to_string());
+                        found_username = Some(username.to_string());
                     }
                 }
 
-                if let Some(screen_name) = data.get("screen_name").and_then(|v| v.as_str()) {
-                    if !screen_name.is_empty() {
-                        return Some(screen_name.to_string());
+                if found_username.is_none() {
+                    if let Some(screen_name) = data.get("screen_name").and_then(|v| v.as_str()) {
+                        if !screen_name.is_empty() {
+                            found_username = Some(screen_name.to_string());
+                        }
                     }
+                }
+
+                if let Some(un) = found_username {
+                    return Some((un, found_avatar));
                 }
             } else {
                 println!("  [DEBUG] TikTok API: No 'data' object found in response");
@@ -82,7 +96,7 @@ impl UsernameFetcher {
     }
 
     /// Attempts to fetch the X (Twitter) username (screen_name) using cookies.
-    pub async fn fetch_x_username(cookies: &str, user_id: &str) -> Option<String> {
+    pub async fn fetch_x_username(cookies: &str) -> Option<(String, Option<String>)> {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .redirect(reqwest::redirect::Policy::limited(5))
@@ -122,6 +136,7 @@ impl UsernameFetcher {
             // Generic search for "screen_name":"..."
             // We skip the first part because split gives us the part *before* the first delimiter
             let broken_str: Vec<&str> = text.split(r#""screen_name":""#).collect();
+            let mut found_handle = None;
             for part in broken_str.iter().skip(1) {
                 if let Some(end) = part.find('"') {
                     let handle = &part[0..end];
@@ -129,11 +144,32 @@ impl UsernameFetcher {
                         && handle != "home"
                         && handle != "login"
                         && handle != "user"
-                        && handle != user_id
+                        && !handle.chars().all(|c| c.is_numeric())
                     {
-                        return Some(handle.to_string());
+                        found_handle = Some(handle.to_string());
+                        break;
                     }
                 }
+            }
+
+            if let Some(handle) = found_handle {
+                // Try to find avatar in the same text
+                // Search for "profile_image_url_https":"..."
+                let mut found_avatar = None;
+                let avatar_split: Vec<&str> =
+                    text.split(r#""profile_image_url_https":""#).collect();
+                for part in avatar_split.iter().skip(1) {
+                    if let Some(end) = part.find('"') {
+                        let avatar_url = &part[0..end];
+                        // Unescape standard JSON unicode escapes, mainly forward slashes
+                        let unescaped = avatar_url.replace("\\/", "/");
+                        if unescaped.starts_with("https://") {
+                            found_avatar = Some(unescaped);
+                            break;
+                        }
+                    }
+                }
+                return Some((handle, found_avatar));
             }
         }
 
@@ -141,7 +177,7 @@ impl UsernameFetcher {
     }
 
     /// Attempts to fetch the YouTube username/channel name using cookies and the InnerTube API.
-    pub async fn fetch_youtube_username(cookies: &str) -> Option<String> {
+    pub async fn fetch_youtube_username(cookies: &str) -> Option<(String, Option<String>)> {
         use sha1::{Digest, Sha1};
         use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -248,60 +284,96 @@ impl UsernameFetcher {
         if res.status().is_success() {
             let json_body: Value = res.json().await.ok()?;
 
-            // 4. Recursive search for accountName -> simpleText
-            fn find_account_name(val: &Value) -> Option<String> {
-                match val {
-                    Value::Object(map) => {
-                        // Check if this object is an "accountName" holding a "simpleText" or runs
-                        if let Some(account_name) = map.get("accountName") {
-                            if let Some(simple_text) =
-                                account_name.get("simpleText").and_then(|s| s.as_str())
-                            {
-                                return Some(simple_text.to_string());
+            // 4. Recursive search for accountName -> simpleText and thumbnails
+            fn find_account_info(val: &Value) -> Option<(String, Option<String>)> {
+                fn find_account_info_internal(val: &Value) -> Option<String> {
+                    match val {
+                        Value::Object(map) => {
+                            if let Some(account_name) = map.get("accountName") {
+                                if let Some(simple_text) =
+                                    account_name.get("simpleText").and_then(|s| s.as_str())
+                                {
+                                    return Some(simple_text.to_string());
+                                }
                             }
-                        }
 
-                        // Or if we are already inside an object that might have simpleText, though we prefer being explicit
-                        // about the parent key if possible to avoid false positives. Look for account fallback.
-                        if map.contains_key("accountName") {
-                            // already checked above
-                        }
-
-                        // Also sometimes the channel name is under channelName -> simpleText
-                        if let Some(channel_name) = map.get("channelName") {
-                            if let Some(simple_text) =
-                                channel_name.get("simpleText").and_then(|s| s.as_str())
-                            {
-                                return Some(simple_text.to_string());
+                            if let Some(channel_name) = map.get("channelName") {
+                                if let Some(simple_text) =
+                                    channel_name.get("simpleText").and_then(|s| s.as_str())
+                                {
+                                    return Some(simple_text.to_string());
+                                }
                             }
-                        }
 
-                        // Recurse into all object values
-                        for (_, v) in map {
-                            if let Some(found) = find_account_name(v) {
-                                return Some(found);
+                            for (_, v) in map {
+                                if let Some(found) = find_account_info_internal(v) {
+                                    return Some(found);
+                                }
                             }
+                            None
                         }
-                        None
+                        Value::Array(arr) => {
+                            for item in arr {
+                                if let Some(found) = find_account_info_internal(item) {
+                                    return Some(found);
+                                }
+                            }
+                            None
+                        }
+                        _ => None,
                     }
-                    Value::Array(arr) => {
-                        for item in arr {
-                            if let Some(found) = find_account_name(item) {
-                                return Some(found);
+                }
+
+                // Thumbnail extraction
+                fn find_avatar(val: &Value) -> Option<String> {
+                    match val {
+                        Value::Object(map) => {
+                            if let Some(account_photo) = map.get("accountPhoto") {
+                                if let Some(thumbnails) =
+                                    account_photo.get("thumbnails").and_then(|t| t.as_array())
+                                {
+                                    if let Some(last) = thumbnails.last() {
+                                        if let Some(url) = last.get("url").and_then(|u| u.as_str())
+                                        {
+                                            return Some(url.to_string());
+                                        }
+                                    }
+                                }
                             }
+
+                            for (_, v) in map {
+                                if let Some(found) = find_avatar(v) {
+                                    return Some(found);
+                                }
+                            }
+                            None
                         }
-                        None
+                        Value::Array(arr) => {
+                            for item in arr {
+                                if let Some(found) = find_avatar(item) {
+                                    return Some(found);
+                                }
+                            }
+                            None
+                        }
+                        _ => None,
                     }
-                    _ => None,
+                }
+
+                if let Some(name) = find_account_info_internal(val) {
+                    let avatar = find_avatar(val);
+                    println!(
+                        "  [DEBUG] YouTube: Successfully extracted account name: {}",
+                        name
+                    );
+                    return Some((name, avatar));
+                } else {
+                    return None;
                 }
             }
 
-            if let Some(name) = find_account_name(&json_body) {
-                println!(
-                    "  [DEBUG] YouTube: Successfully extracted account name: {}",
-                    name
-                );
-                return Some(name);
+            if let Some((name, avatar)) = find_account_info(&json_body) {
+                return Some((name, avatar));
             } else {
                 println!(
                     "  [DEBUG] YouTube: Request successful, but no account name found in response."
@@ -317,7 +389,7 @@ impl UsernameFetcher {
         let is_valid = match platform_id {
             "tiktok" => Self::fetch_tiktok_username(cookies).await.is_some(),
             "youtube" => Self::fetch_youtube_username(cookies).await.is_some(),
-            "x" | "twitter" => Self::fetch_x_username(cookies, "").await.is_some(),
+            "x" | "twitter" => Self::fetch_x_username(cookies).await.is_some(),
             "instagram" => {
                 let client = Client::builder()
                     .timeout(std::time::Duration::from_secs(10))
