@@ -7,7 +7,7 @@
 *   **Language:** TypeScript
 *   **Styling:** TailwindCSS v3 (Stable)
 *   **State:** Zustand (global UI state), TanStack Query (server state/IPC)
-*   **Virtualization:** @tanstack/react-virtual (for the "Wall")
+*   **Virtualization:** @virtuoso.dev/masonry (for the "Wall")
 *   **I18n:** react-i18next
 
 ### Backend (Rust)

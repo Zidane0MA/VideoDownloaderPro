@@ -36,8 +36,8 @@
 - [x] Settings Page (Path, Concurrency, Language, Trash Config)
 
 ### Phase 5: Frontend - Gallery (Wall)
-- [ ] Virtualized Grid
-- [ ] Post Card Component
+- [x] Virtualized Grid (via @virtuoso.dev/masonry)
+- [x] Post Card Component
 - [ ] Media Viewer
 
 ### Phase 6: Polish & Packaging

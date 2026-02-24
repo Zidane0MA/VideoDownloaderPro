@@ -7,10 +7,9 @@
 We have successfully implemented robust authentication (L1/L2/L3) and fixed the `yt-dlp` cookie rejection issue by integrating **Deno** as a native sidecar for signature extraction. JSON cookie imports (L3) are also fully supported.
 
 ## Recent Changes
+- **Gallery Wall Feature**: Built a high-performance virtualized masonry grid using `@virtuoso.dev/masonry` to handle thousands of items seamlessly.
+- **Media Pipeline**: Configured backend `ytdlp` commands (`worker.rs`) and `post_process.rs` to download and automatically resize optimal platform thumbnails.
 - **Settings Page**: Added advanced settings UI with `Zustand` and native Rust backend syncing. Implemented download path selector using `tauri-plugin-dialog`, concurrent downloads slider, language toggle, and Trash auto-clean configuration.
-- **Username & Avatar Extraction**: Added `username` and `avatar_url` columns to `platform_sessions` and implemented `UsernameFetcher` logic for TikTok and X (Twitter), alongside Instagram.
-- **Deno Migration**: Replaced `quickjs` with `deno` as the JS runtime for `yt-dlp` to improve compatibility and performance.
-- **Session Validation**: Implemented mandatory cookie checks (`auth_token`, `sessionid`) to prevent false-positive logins.
 
 ## Current State
 - **Backend**: Auth system is stable. `CookieManager` handles encryption, JSON conversion, and temp file creation. `yt-dlp` uses the embedded Deno binary.
@@ -21,11 +20,12 @@ We have successfully implemented robust authentication (L1/L2/L3) and fixed the 
     -   **L3 (Manual)**: Verified & Working.
     -   **Validation**: Implemented (rejects guest cookies).
     -   **Display**: Username and Avatar showing for supported platforms (IG/TikTok/X).
-- **Next Focus**: Moving entirely to Phase 5 (Gallery `Wall`).
+- **Next Focus**: Completing Phase 5 with the Media Viewer component, then advancing to Phase 6 (Polish & Packaging).
 
 ## Next Steps
-1.  **Phase 5: Gallery**:
-    -   Implement Virtualized Grid for downloaded content using `@tanstack/react-virtual`.
-    -   Build Post Card component (thumbnail, creator, stats).
-    -   Implement Media Viewer.
+1.  **Phase 5: Media Viewer**:
+    -   Implement the fullscreen media viewer when clicking a PostCard.
+2.  **Phase 6: Polish**:
+    -   Dark/Light Mode configurations.
+    -   Global Error Handling UI.
 2.  **Cleanup**: Verify Deno binary updates in production builds.

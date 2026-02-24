@@ -19,81 +19,38 @@ Patterns for building high-performance media galleries in React + Tauri. Covers 
 ## Pattern 1: Virtualized Masonry Grid
 
 ```bash
-npm install @tanstack/react-virtual
+npm install @virtuoso.dev/masonry
 ```
 
 ```tsx
-import { useRef, useMemo } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import type { Post } from '../types';
+import type { Post } from '../../../types/wall';
+import { PostCard } from './PostCard';
+import { VirtuosoMasonry } from '@virtuoso.dev/masonry';
 
 interface WallGridProps {
-  posts: Post[];
-  columnCount: number;
-  gap: number;
+    posts: Post[];
+    columnCount: number;
+    gap?: number;
 }
 
-export function WallGrid({ posts, columnCount, gap }: WallGridProps) {
-  const parentRef = useRef<HTMLDivElement>(null);
-
-  const columns = useMemo(() => {
-    const cols: Post[][] = Array.from({ length: columnCount }, () => []);
-    const colHeights = new Array(columnCount).fill(0);
-    posts.forEach((post) => {
-      const shortestCol = colHeights.indexOf(Math.min(...colHeights));
-      cols[shortestCol].push(post);
-      const ar = post.media[0]
-        ? (post.media[0].height ?? 300) / (post.media[0].width ?? 200)
-        : 1.5;
-      colHeights[shortestCol] += ar * 200 + 80;
-    });
-    return cols;
-  }, [posts, columnCount]);
-
-  return (
-    <div ref={parentRef} style={{
-      display: 'grid',
-      gridTemplateColumns: `repeat(${columnCount}, 1fr)`,
-      gap: `${gap}px`,
-      height: '100%',
-      overflow: 'auto',
-    }}>
-      {columns.map((colPosts, i) => (
-        <VirtualColumn key={i} posts={colPosts} parentRef={parentRef} />
-      ))}
-    </div>
-  );
-}
-
-function VirtualColumn({ posts, parentRef }: {
-  posts: Post[];
-  parentRef: React.RefObject<HTMLDivElement>;
-}) {
-  const virtualizer = useVirtualizer({
-    count: posts.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: (i) => {
-      const m = posts[i].media[0];
-      return m?.width && m.height ? (m.height / m.width) * 250 + 80 : 350;
-    },
-    overscan: 5,
-  });
-
-  return (
-    <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
-      {virtualizer.getVirtualItems().map((vi) => (
-        <div key={posts[vi.index].id}
-          ref={virtualizer.measureElement}
-          data-index={vi.index}
-          style={{
-            position: 'absolute', top: 0, left: 0, width: '100%',
-            transform: `translateY(${vi.start}px)`,
-          }}>
-          <PostCard post={posts[vi.index]} />
+const ItemContent: React.FC<{ data: Post }> = ({ data }) => {
+    return (
+        <div style={{ padding: '6px' }}>
+            <PostCard post={data} />
         </div>
-      ))}
-    </div>
-  );
+    );
+};
+
+export function WallGrid({ posts, columnCount, gap = 16 }: WallGridProps) {
+    return (
+        <VirtuosoMasonry
+            columnCount={columnCount}
+            data={posts}
+            style={{ height: '100%' }}
+            initialItemCount={Math.min(posts.length, 20)}
+            ItemContent={ItemContent}
+        />
+    );
 }
 ```
 
