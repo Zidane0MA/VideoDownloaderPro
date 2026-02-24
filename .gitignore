@@ -1,7 +1,7 @@
 # Agent specific
-.agent/
-.agents/
-.gemini/
+# .agent/
+# .agents/
+# .gemini/
 
 # System files
 .DS_Store

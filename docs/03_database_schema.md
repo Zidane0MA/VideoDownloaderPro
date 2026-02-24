@@ -145,6 +145,8 @@ Stores encrypted session cookies per platform for authenticated downloads.
 | `platform_id` | TEXT | PRIMARY KEY, FK → `platforms.id` | One session per platform |
 | `status` | TEXT | NOT NULL, DEFAULT `'NONE'` | Enum: `ACTIVE`, `EXPIRED`, `NONE` |
 | `encrypted_cookies` | BLOB | | Cookies encrypted with Windows DPAPI |
+| `username` | TEXT | NULLABLE | Extracted profile handle/username |
+| `avatar_url` | TEXT | NULLABLE | Direct URL to user's profile picture |
 | `cookie_method` | TEXT | NOT NULL, DEFAULT `'webview'` | How cookies were obtained: `webview`, `browser`, `file` |
 | `expires_at` | DATETIME | NULLABLE | Estimated cookie expiration |
 | `last_verified` | DATETIME | NULLABLE | Last successful use of these cookies |

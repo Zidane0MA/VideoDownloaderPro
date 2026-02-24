@@ -37,8 +37,8 @@
 *   `media`: Actual files (1:N with posts).
 *   `download_tasks`: Active queue state.
 *   `settings`: Key-value user configs.
-*   `platform_sessions`: Encrypted auth data (now includes `username` column).
+*   `platform_sessions`: Encrypted auth data (now includes `username` and `avatar_url` columns).
 
 ## Key Algorithms
 *   **Cookie Validation**: Checks for specific auth tokens (e.g. `auth_token`, `sessionid`) before saving sessions to prevent guest-cookie false positives.
-*   **Username Extraction**: Parses specific cookies to cache the logged-in username.
+*   **Profile Extraction**: Parses specific cookies and calls internal platform APIs to cache the logged-in username and avatar URL.

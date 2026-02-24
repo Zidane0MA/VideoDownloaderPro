@@ -47,9 +47,10 @@ flowchart TD
 2. User logs in normally (supports 2FA via SMS/email/authenticator).
 3. User clicks **"Listo, cerrar"** (or the app detects a successful redirect).
 4. Rust backend calls `Webview::cookies_for_url()` (Tauri v2.4.0+) to extract session cookies.
-5. Cookies are **encrypted** with Windows DPAPI and stored in `app_data/auth/{platform}.cookies.enc`.
-6. `platform_sessions` table is updated with `status = ACTIVE`.
-7. If a download was waiting, it automatically retries.
+5. The backend validates the presence of required tokens and calls the platform's internal API (`UsernameFetcher::fetch_profile`) to retrieve the user's **handle** and **avatar URL**.
+6. Cookies are **encrypted** with Windows DPAPI and stored in `app_data/auth/{platform}.cookies.enc`.
+7. `platform_sessions` table is updated with `status = ACTIVE`, mapping the username and avatar to the UI.
+8. If a download was waiting, it automatically retries.
 
 ### Platform Login URLs
 
@@ -88,6 +89,8 @@ When yt-dlp needs cookies:
 | `platform_id` | TEXT PK | One session per platform |
 | `status` | TEXT | `ACTIVE`, `EXPIRED`, `NONE` |
 | `encrypted_cookies` | BLOB | DPAPI-encrypted cookie data |
+| `username` | TEXT | Extracted profile handle/username |
+| `avatar_url` | TEXT | Direct URL to user's profile picture |
 | `cookie_method` | TEXT | How cookies were obtained |
 | `expires_at` | DATETIME | Estimated expiration |
 | `last_verified` | DATETIME | Last successful use |
