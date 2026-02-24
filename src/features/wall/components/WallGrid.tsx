@@ -7,6 +7,7 @@ interface WallGridProps {
     posts: Post[];
     columnCount: number;
     gap?: number;
+    onPostClick?: (post: Post) => void;
 }
 
 /**
@@ -17,11 +18,12 @@ interface WallGridProps {
  * - Shortest-column-first distribution (true masonry)
  * - Dynamic column count (responsive via useResponsiveColumns)
  */
-export function WallGrid({ posts, columnCount }: WallGridProps) {
+export function WallGrid({ posts, columnCount, onPostClick }: WallGridProps) {
     return (
         <VirtuosoMasonry
             columnCount={columnCount}
             data={posts}
+            context={{ onPostClick }}
             style={{ height: '100%' }}
             initialItemCount={Math.min(posts.length, 20)}
             ItemContent={ItemContent}
@@ -29,10 +31,10 @@ export function WallGrid({ posts, columnCount }: WallGridProps) {
     );
 }
 
-const ItemContent: React.FC<{ data: Post }> = ({ data }) => {
+const ItemContent: React.FC<{ data: Post; context?: { onPostClick?: (p: Post) => void } }> = ({ data, context }) => {
     return (
         <div style={{ padding: '6px' }}>
-            <PostCard post={data} />
+            <PostCard post={data} onClick={() => context?.onPostClick?.(data)} />
         </div>
     );
 };

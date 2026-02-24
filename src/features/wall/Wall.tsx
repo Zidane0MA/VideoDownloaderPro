@@ -1,10 +1,12 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { usePostsInfinite } from './api/usePostsInfinite';
 import { useDownloadCompletionSync } from './api/useDownloadCompletionSync';
 import { WallGrid } from './components/WallGrid';
 import { useResponsiveColumns } from './hooks/useResponsiveColumns';
+import { MediaViewer } from './components/viewer/MediaViewer';
 import { Loader2, Image as ImageIcon } from 'lucide-react';
+import type { Post } from '../../types/wall';
 
 export function Wall() {
     const { t } = useTranslation();
@@ -13,6 +15,7 @@ export function Wall() {
         usePostsInfinite();
     const observerRef = useRef<HTMLDivElement>(null);
     const columnCount = useResponsiveColumns();
+    const [selectedPost, setSelectedPost] = useState<Post | null>(null);
 
     useEffect(() => {
         const obs = new IntersectionObserver(
@@ -69,12 +72,16 @@ export function Wall() {
 
     return (
         <div className="h-[calc(100vh-140px)] flex flex-col relative">
-            <WallGrid posts={allPosts} columnCount={columnCount} gap={16} />
+            <WallGrid posts={allPosts} columnCount={columnCount} gap={16} onPostClick={setSelectedPost} />
 
             {/* Infinite Scroll Sentinel - Placed at bottom of container */}
             <div ref={observerRef} className="h-10 w-full flex items-center justify-center text-surface-400 absolute bottom-0 left-0 pointer-events-none">
                 {isFetchingNextPage && <Loader2 className="w-5 h-5 animate-spin text-brand-500" />}
             </div>
+
+            {selectedPost && (
+                <MediaViewer post={selectedPost} onClose={() => setSelectedPost(null)} />
+            )}
         </div>
     );
 }

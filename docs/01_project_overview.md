@@ -36,7 +36,7 @@ This project serves two purposes:
 -   **The Wall:** A Pinterest-style feed of all downloaded content, ordered chronologically.
 -   **Post-Based:** Content is grouped by "Post", which may contain multiple "Media" items.
 -   **Smart Organization:** Auto-grouping by Creator/Source.
--   **Performance:** Virtualized rendering (`@tanstack/react-virtual`) + lazy thumbnail loading for thousands of posts.
+-   **Performance:** Virtualized rendering (`@virtuoso.dev/masonry`) + lazy thumbnail loading for thousands of posts.
 -   **Search & Filter:** By title, creator, platform, date. *(Post-MVP)*
 
 ### E. Authentication & Cookies

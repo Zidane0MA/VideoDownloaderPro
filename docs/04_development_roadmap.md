@@ -9,7 +9,7 @@
 2.  **Frontend Dependencies:**
     -   `tailwindcss`, `lucide-react` (icons), `zustand` (state), `@tanstack/react-query`.
     -   `react-i18next`, `i18next`, `i18next-browser-languagedetector`.
-    -   `@tanstack/react-virtual` (virtualized lists).
+    -   `@virtuoso.dev/masonry` (masonry grid and virtualized lists).
 3.  **Backend Dependencies (Cargo):**
     -   `sea-orm` + `sea-orm-migration` (ORM + migrations).
     -   `serde`, `serde_json` (serialization).
@@ -119,7 +119,7 @@
 **Goal:** The "Wall of Content" — core differentiator.
 
 1.  **Wall Layout:**
-    -   Masonry grid with virtualized rendering (`@tanstack/react-virtual`).
+    -   Masonry grid with virtualized rendering (`@virtuoso.dev/masonry`).
     -   Lazy thumbnail loading with `IntersectionObserver`.
     -   Paginated backend queries (`LIMIT/OFFSET` with cursor).
 2.  **Post Card Component:**

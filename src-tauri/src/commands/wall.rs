@@ -2,7 +2,10 @@ use sea_orm::{
     ColumnTrait, EntityTrait, LoaderTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
 };
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use tauri::State;
+use tauri_plugin_opener::OpenerExt;
+use trash::delete as move_to_trash;
 
 use crate::{
     entity::{creator, media, post},
@@ -141,4 +144,56 @@ pub async fn get_posts(
         limit,
         total_pages,
     })
+}
+
+#[tauri::command]
+pub async fn reveal_in_explorer(
+    app_handle: tauri::AppHandle,
+    file_path: String,
+) -> Result<(), String> {
+    app_handle
+        .opener()
+        .reveal_item_in_dir(file_path.clone())
+        .map_err(|e| format!("Failed to reveal {} in explorer: {}", file_path, e))
+}
+
+#[tauri::command]
+pub async fn delete_post(state: State<'_, AppState>, post_id: String) -> Result<(), String> {
+    // 1. Fetch media for this post to get file paths using sea-orm
+    let medias = media::Entity::find()
+        .filter(media::Column::PostId.eq(&post_id))
+        .all(&state.db)
+        .await
+        .map_err(|e| format!("Database error finding media: {}", e))?;
+
+    // 2. Iterate and send files to trash, ignoring missing ones
+    for m in medias {
+        if Path::new(&m.file_path).exists() {
+            let _ = move_to_trash(&m.file_path);
+        }
+        if let Some(thumb) = &m.thumbnail_path {
+            if Path::new(thumb).exists() {
+                let _ = move_to_trash(thumb);
+            }
+        }
+        if let Some(thumb_sm) = &m.thumbnail_sm_path {
+            if Path::new(thumb_sm).exists() {
+                let _ = move_to_trash(thumb_sm);
+            }
+        }
+    }
+
+    // 3. Hard delete records from DB
+    media::Entity::delete_many()
+        .filter(media::Column::PostId.eq(&post_id))
+        .exec(&state.db)
+        .await
+        .map_err(|e| format!("Failed to delete media from db: {}", e))?;
+
+    post::Entity::delete_by_id(&post_id)
+        .exec(&state.db)
+        .await
+        .map_err(|e| format!("Failed to delete post from db: {}", e))?;
+
+    Ok(())
 }

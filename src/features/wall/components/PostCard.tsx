@@ -4,12 +4,15 @@ import type { Post } from '../../../types/wall';
 import { LazyThumbnail } from './LazyThumbnail';
 
 export const PostCard = memo(
-    function PostCard({ post }: { post: Post }) {
+    function PostCard({ post, onClick }: { post: Post; onClick?: () => void }) {
         // Prefer the small thumbnail for wall gallery
         const thumb = post.media[0]?.thumbnail_sm_path ?? post.media[0]?.thumbnail_path;
 
         return (
-            <article className="group relative flex flex-col gap-2 rounded-xl bg-surface-800/50 p-2 hover:bg-surface-800 transition-colors border border-transparent hover:border-surface-700 shadow-sm">
+            <article
+                onClick={onClick}
+                className="group relative flex flex-col gap-2 rounded-xl bg-surface-800/50 p-2 hover:bg-surface-800 transition-colors border border-transparent hover:border-surface-700 shadow-sm cursor-pointer"
+            >
                 <div className="relative w-full rounded-lg overflow-hidden">
                     <LazyThumbnail filePath={thumb} alt={post.title ?? 'Media'} />
 

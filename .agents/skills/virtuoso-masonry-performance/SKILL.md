@@ -1,9 +1,9 @@
 ---
-name: react-virtual-performance
-description: "High-performance React gallery patterns: @tanstack/react-virtual, Masonry Grid, lazy thumbnail loading via Tauri convertFileSrc, memoized components, and infinite scroll. Use when building the Wall/Gallery view in VideoDownloaderPro."
+name: virtuoso-masonry-performance
+description: "High-performance React gallery patterns: @virtuoso.dev/masonry, Masonry Grid, lazy thumbnail loading via Tauri convertFileSrc, memoized components, and infinite scroll. Use when building the Wall/Gallery view in VideoDownloaderPro."
 ---
 
-# React Virtual Performance Patterns
+# Virtuoso Masonry Performance Patterns
 
 Patterns for building high-performance media galleries in React + Tauri. Covers virtualization, Masonry layout, lazy loading, and memoization for thousands of items.
 
@@ -214,7 +214,7 @@ export function useDownloadCompletionSync() {
 
 ```json
 {
-  "@tanstack/react-virtual": "^3.0.0",
+  "@virtuoso.dev/masonry": "latest",
   "@tanstack/react-query": "^5.0.0",
   "@tauri-apps/api": "^2.0.0"
 }
