@@ -22,6 +22,7 @@
     - [x] Frontend UI (ConnectAccountModal)
     - [x] Backend Commands (L1/L2)
     - [x] **Debug**: Fix `yt-dlp` rejection of cookies ("Sign in to confirm your age") only for L3
+    - [x] **Debug**: Fix Unicode filepath corruption on Windows by migrating to native filesystem scans
     - [x] **Deno Sidecar**: Embedded JS runtime (replaces QuickJS) for signature extraction
     - [x] **JSON Cookie Support**: Manual Import (L3) with format conversion
     - [x] **Verify L1 (WebView)**: Working (Fixed "Not Connected" & "Channel Closed" bugs).

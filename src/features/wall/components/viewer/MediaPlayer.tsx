@@ -2,6 +2,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import type { Media } from '../../../../types/wall';
 import { Image as ImageIcon } from 'lucide-react';
 import { useState } from 'react';
+import { CustomVideoPlayer } from './CustomVideoPlayer';
 
 export function MediaPlayer({ media }: { media: Media }) {
     const [hasError, setHasError] = useState(false);
@@ -21,13 +22,9 @@ export function MediaPlayer({ media }: { media: Media }) {
     return (
         <div className="w-full h-full flex items-center justify-center bg-black/95">
             {isVideo ? (
-                <video
+                <CustomVideoPlayer
                     src={src}
-                    controls
-                    autoPlay
-                    loop
                     onError={() => setHasError(true)}
-                    className="max-w-full max-h-full object-contain"
                 />
             ) : (
                 <img

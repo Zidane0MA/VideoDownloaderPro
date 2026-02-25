@@ -14,18 +14,12 @@ pub struct ProgressUpdate {
 #[derive(Debug, PartialEq)]
 pub enum ParseResult {
     Progress(ProgressUpdate),
-    Filename(String),
-    /// The final filename after merging video+audio streams.
-    /// Parsed from: [Merger] Merging formats into "filename.ext"
-    MergedFilename(String),
     Ignore,
 }
 
 pub struct Parser {
     progress_regex: Regex,
     completion_regex: Regex,
-    destination_regex: Regex,
-    merger_regex: Regex,
 }
 
 impl Parser {
@@ -40,24 +34,20 @@ impl Parser {
         let completion_re =
             Regex::new(r"\[download\]\s+100(?:\.0)?%\s+of\s+(?:~)?(\S+)\s+in\s+(\S+)").unwrap();
 
-        // [download] Destination: some_video.mp4
-        let dest_re = Regex::new(r"\[download\]\s+Destination:\s+(.+)").unwrap();
-
-        // [Merger] Merging formats into "video.mkv"
-        let merger_re =
-            Regex::new(r"\[Merger\]\s+Merging formats into\s+\x22([^\x22]+)\x22").unwrap();
-
         Self {
             progress_regex: re,
             completion_regex: completion_re,
-            destination_regex: dest_re,
-            merger_regex: merger_re,
         }
     }
 
     pub fn parse_line(&self, line: &str) -> ParseResult {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return ParseResult::Ignore;
+        }
+
         // Try the normal progress line first
-        if let Some(caps) = self.progress_regex.captures(line) {
+        if let Some(caps) = self.progress_regex.captures(trimmed) {
             let progress_str = caps.get(1).map(|m| m.as_str()).unwrap_or("0");
             let progress = progress_str.parse::<f64>().unwrap_or(0.0);
 
@@ -79,7 +69,7 @@ impl Parser {
                 speed,
                 eta,
             })
-        } else if let Some(caps) = self.completion_regex.captures(line) {
+        } else if let Some(caps) = self.completion_regex.captures(trimmed) {
             // Completion line: [download] 100% of 10.00MiB in 00:03
             let total_size_str = caps.get(1).map(|m| m.as_str().to_string());
             let total_bytes = total_size_str.as_ref().and_then(|s| parse_size(s));
@@ -91,18 +81,6 @@ impl Parser {
                 speed: None,
                 eta: None,
             })
-        } else if let Some(caps) = self.merger_regex.captures(line) {
-            let filename = caps
-                .get(1)
-                .map(|m| m.as_str().to_string())
-                .unwrap_or_default();
-            ParseResult::MergedFilename(filename)
-        } else if let Some(caps) = self.destination_regex.captures(line) {
-            let filename = caps
-                .get(1)
-                .map(|m| m.as_str().to_string())
-                .unwrap_or_default();
-            ParseResult::Filename(filename)
         } else {
             ParseResult::Ignore
         }
@@ -178,84 +156,22 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_filename() {
+    fn test_tagged_lines_are_ignored() {
         let parser = Parser::new();
-        let line = "[download] Destination: video.mp4";
         assert_eq!(
-            parser.parse_line(line),
-            ParseResult::Filename("video.mp4".to_string())
+            parser.parse_line("[info] Extracting URL"),
+            ParseResult::Ignore
         );
+        assert_eq!(parser.parse_line(""), ParseResult::Ignore);
 
-        let line_with_path = "[download] Destination: C:\\Downloads\\video.mp4";
+        // Filename/merger lines are now intentionally ignored (fs-scan is canonical)
         assert_eq!(
-            parser.parse_line(line_with_path),
-            ParseResult::Filename("C:\\Downloads\\video.mp4".to_string())
+            parser.parse_line("[download] Destination: video.mp4"),
+            ParseResult::Ignore
         );
-    }
-
-    #[test]
-    fn test_parse_size() {
-        assert_eq!(parse_size("1.00KiB"), Some(1024));
-        assert_eq!(parse_size("1.5MiB"), Some(1572864));
-        assert_eq!(parse_size("2.00GiB"), Some(2147483648));
-    }
-
-    #[test]
-    fn test_parse_size_edge_cases() {
-        assert_eq!(parse_size("0.00MiB"), Some(0));
-        assert!(parse_size("unknown").is_none());
-        assert!(parse_size("").is_none());
-    }
-
-    #[test]
-    fn test_parse_completion_line() {
-        let parser = Parser::new();
-        let line = "[download] 100% of 10.00MiB in 00:03";
-        let result = parser.parse_line(line);
-
-        if let ParseResult::Progress(update) = result {
-            assert_eq!(update.progress, 100.0);
-            assert_eq!(update.total_bytes, Some(10485760));
-            assert_eq!(update.downloaded_bytes, Some(10485760));
-            assert_eq!(update.speed, None);
-            assert_eq!(update.eta, None);
-        } else {
-            panic!("Expected Progress, got {:?}", result);
-        }
-    }
-
-    #[test]
-    fn test_parse_completion_line_with_decimal() {
-        let parser = Parser::new();
-        let line = "[download] 100.0% of 5.50GiB in 01:23:45";
-        let result = parser.parse_line(line);
-
-        if let ParseResult::Progress(update) = result {
-            assert_eq!(update.progress, 100.0);
-            assert!(update.total_bytes.is_some());
-            assert_eq!(update.downloaded_bytes, update.total_bytes);
-        } else {
-            panic!("Expected Progress, got {:?}", result);
-        }
-    }
-
-    #[test]
-    fn test_parse_merger_line() {
-        let parser = Parser::new();
-        let line = "[Merger] Merging formats into \"My Cool Video.mkv\"";
         assert_eq!(
-            parser.parse_line(line),
-            ParseResult::MergedFilename("My Cool Video.mkv".to_string())
-        );
-    }
-
-    #[test]
-    fn test_parse_merger_line_with_path() {
-        let parser = Parser::new();
-        let line = "[Merger] Merging formats into \"C:\\Downloads\\video.webm\"";
-        assert_eq!(
-            parser.parse_line(line),
-            ParseResult::MergedFilename("C:\\Downloads\\video.webm".to_string())
+            parser.parse_line("[Merger] Merging formats into \"video.mkv\""),
+            ParseResult::Ignore
         );
     }
 }

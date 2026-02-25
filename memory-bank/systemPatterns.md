@@ -45,8 +45,7 @@ A progressive strategy to handle platform restrictions (YouTube, Instagram, etc.
 *   **State Machine:** Downloads move through strict states: `QUEUED` -> `FETCHING_META` -> `READY` -> `DOWNLOADING` -> `COMPLETED`.
 *   **Recovery:** Resumable downloads using `yt-dlp -c` and partial files.
 *   **Process Management (Windows):** Uses `taskkill /F /T /PID` to terminate the entire process tree (including child processes like `ffmpeg`) because standard `Child::kill()` leaves orphans. On non-Windows, falls back to standard kill.
-*   **File Size Handling:** For multi-stream downloads (video+audio), `yt-dlp` reports partial stream sizes. The system parses the final merged filename from `[Merger]` output and reads the actual file size from disk upon completion. The total size is updated in the DB to reflect the final file size.
-*   **Stdout Encoding (Windows):** Python's default stdout encoding on Windows can drop unicode characters (like `⧸` for `/`) during progress parsing. The `PYTHONIOENCODING=utf-8` environment variable is strictly enforced when spawning `yt-dlp` to ensure accurate filename parsing and prevent database/disk path mismatches.
+*   **Filename Detection & File Size (Windows Encoding Fix):** yt-dlp's stdout on Windows uses cp1252, corrupting non-ASCII characters in filenames. Instead of parsing stdout for filenames, the system takes a snapshot of the output directory before the download and compares it after the process exits. This uses Rust's native Windows UTF-16 filesystem APIs (`std::fs::read_dir`), ensuring perfectly accurate Unicode paths, and then reads the actual final file size from disk.
 *   **Pause/Resume:** Implemented via `AtomicBool` for global queue pause and cancellation tokens for individual tasks.
 
 ### 5. Error Handling

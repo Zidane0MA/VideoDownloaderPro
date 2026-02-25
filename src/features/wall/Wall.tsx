@@ -70,6 +70,26 @@ export function Wall() {
         );
     }
 
+    const currentIndex = selectedPost ? allPosts.findIndex(p => p.id === selectedPost.id) : -1;
+    const hasNextPost = currentIndex !== -1 && currentIndex < allPosts.length - 1;
+    const hasPrevPost = currentIndex > 0;
+
+    const handleNextPost = () => {
+        if (hasNextPost) {
+            setSelectedPost(allPosts[currentIndex + 1]);
+            // If we are close to the end, prefetch
+            if (currentIndex >= allPosts.length - 3 && hasNextPage && !isFetchingNextPage) {
+                fetchNextPage();
+            }
+        }
+    };
+
+    const handlePrevPost = () => {
+        if (hasPrevPost) {
+            setSelectedPost(allPosts[currentIndex - 1]);
+        }
+    };
+
     return (
         <div className="h-[calc(100vh-140px)] flex flex-col relative">
             <WallGrid posts={allPosts} columnCount={columnCount} gap={16} onPostClick={setSelectedPost} />
@@ -80,7 +100,12 @@ export function Wall() {
             </div>
 
             {selectedPost && (
-                <MediaViewer post={selectedPost} onClose={() => setSelectedPost(null)} />
+                <MediaViewer
+                    post={selectedPost}
+                    onClose={() => setSelectedPost(null)}
+                    onNextPost={hasNextPost ? handleNextPost : undefined}
+                    onPrevPost={hasPrevPost ? handlePrevPost : undefined}
+                />
             )}
         </div>
     );

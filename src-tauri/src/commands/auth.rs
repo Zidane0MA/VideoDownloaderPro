@@ -4,8 +4,6 @@ use sea_orm::EntityTrait;
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State, Window};
 #[cfg(target_os = "windows")]
-// use windows::core as windows_core;
-#[cfg(target_os = "windows")]
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     ICoreWebView2GetCookiesCompletedHandler, ICoreWebView2GetCookiesCompletedHandler_Impl,
 };
