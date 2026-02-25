@@ -19,6 +19,15 @@ export function MediaViewer({ post, onClose, onNextPost, onPrevPost }: MediaView
     const mediaList = post.media || [];
     const currentMedia = mediaList[currentIndex];
 
+    // Disable body scroll when viewer is open to prevent scrollbar from taking up width
+    useEffect(() => {
+        const originalStyle = window.getComputedStyle(document.body).overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = originalStyle;
+        };
+    }, []);
+
     // Handle keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -79,34 +88,30 @@ export function MediaViewer({ post, onClose, onNextPost, onPrevPost }: MediaView
             <div className="relative flex-1 flex items-center justify-center min-h-[50vh] bg-black group/nav">
                 <MediaPlayer media={currentMedia} />
 
-                {/* Post Navigation (Edge hot areas) */}
+                {/* Post Navigation (Edge buttons) */}
                 {onPrevPost && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onPrevPost(); }}
-                        className="absolute left-0 top-0 bottom-0 w-24 flex items-center justify-start pl-4 opacity-0 hover:opacity-100 group-hover/nav:opacity-100 transition-opacity bg-gradient-to-r from-black/50 to-transparent text-white"
+                        className="absolute left-6 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-black/50 hover:bg-brand-500 hover:scale-110 transition-all opacity-0 group-hover/nav:opacity-100 text-white shadow-xl shadow-black/20"
                         aria-label="Previous post"
                     >
-                        <div className="p-3 rounded-full bg-black/50 hover:bg-brand-500 hover:scale-110 transition-all">
-                            <ArrowLeft size={32} />
-                        </div>
+                        <ArrowLeft size={32} />
                     </button>
                 )}
 
                 {onNextPost && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onNextPost(); }}
-                        className="absolute right-0 top-0 bottom-0 w-24 flex items-center justify-end pr-4 opacity-0 hover:opacity-100 group-hover/nav:opacity-100 transition-opacity bg-gradient-to-l from-black/50 to-transparent text-white"
+                        className="absolute right-6 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-black/50 hover:bg-brand-500 hover:scale-110 transition-all opacity-0 group-hover/nav:opacity-100 text-white shadow-xl shadow-black/20"
                         aria-label="Next post"
                     >
-                        <div className="p-3 rounded-full bg-black/50 hover:bg-brand-500 hover:scale-110 transition-all">
-                            <ArrowRight size={32} />
-                        </div>
+                        <ArrowRight size={32} />
                     </button>
                 )}
 
                 {/* Gallery Navigation Controls */}
                 {mediaList.length > 1 && (
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 px-4 py-2 bg-black/50 rounded-full text-white backdrop-blur-md opacity-0 group-hover/nav:opacity-100 transition-opacity">
+                    <div className="absolute z-40 bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 px-4 py-2 bg-black/50 rounded-full text-white backdrop-blur-md opacity-0 group-hover/nav:opacity-100 transition-opacity">
                         <button
                             onClick={(e) => { e.stopPropagation(); handlePrev(); }}
                             className="p-1 hover:text-brand-400 transition-colors"

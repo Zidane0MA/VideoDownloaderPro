@@ -103,7 +103,7 @@ export function CustomVideoPlayer({ src, onError }: CustomVideoPlayerProps) {
     };
 
     // Hold to speed up logic
-    const handlePointerDown = (e: React.PointerEvent<HTMLVideoElement>) => {
+    const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
         // Only react to left click
         if (e.button !== 0) return;
 
@@ -115,7 +115,7 @@ export function CustomVideoPlayer({ src, onError }: CustomVideoPlayerProps) {
         }, 400); // 400ms threshold for "hold"
     };
 
-    const handlePointerUp = (e: React.PointerEvent<HTMLVideoElement>) => {
+    const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
         if (e.button !== 0) return;
 
         if (holdTimeoutRef.current) {
@@ -177,30 +177,35 @@ export function CustomVideoPlayer({ src, onError }: CustomVideoPlayerProps) {
             <video
                 ref={videoRef}
                 src={src}
-                className="max-w-full max-h-full object-contain cursor-pointer"
+                className="max-w-full max-h-full object-contain"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={() => setIsPlaying(false)}
                 onError={onError}
+                loop
+            />
+
+            {/* Interaction Overlay (handles play/pause & hold-to-speedup for entire area) */}
+            <div
+                className="absolute inset-0 z-[5] cursor-pointer"
                 onPointerDown={handlePointerDown}
                 onPointerUp={handlePointerUp}
                 onPointerLeave={handlePointerLeave}
-                loop
             />
 
             {/* Hold to speed up indicator */}
             <div
-                className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/60 backdrop-blur-md text-white px-6 py-3 rounded-full flex items-center gap-3 transition-all duration-300 pointer-events-none z-10 ${isHoldingToSpeed ? 'opacity-100 scale-100' : 'opacity-0 scale-90'
+                className={`absolute top-8 left-1/2 -translate-x-1/2 bg-black/30 backdrop-blur-sm text-white px-6 py-3 rounded-full flex items-center gap-3 transition-all duration-300 pointer-events-none z-30 ${isHoldingToSpeed ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-4 scale-95'
                     }`}
             >
                 <FastForward className="w-5 h-5 animate-pulse" />
-                <span className="font-semibold tracking-wider">Fast Foward 2x</span>
+                <span className="font-semibold tracking-wider">Fast-forward 2x</span>
             </div>
 
             {/* Play/Pause center big button (when paused and not interacting) */}
             {!isPlaying && !isHoldingToSpeed && (
                 <div
-                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 bg-brand-500/80 hover:bg-brand-500 text-white rounded-full flex items-center justify-center backdrop-blur-sm cursor-pointer transition-all hover:scale-110 z-10 shadow-xl shadow-brand-500/20"
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 bg-black/30 hover:bg-black/50 text-white rounded-full flex items-center justify-center backdrop-blur-sm cursor-pointer transition-all hover:scale-110 z-[10] shadow-xl shadow-brand-500/20"
                     onClick={togglePlay}
                 >
                     <Play className="w-10 h-10 ml-1" />
