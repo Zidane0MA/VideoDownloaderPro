@@ -3,30 +3,22 @@
 > [!IMPORTANT]
 > When planning new features, ALWAYS consult `/docs` for the authoritative detailed requirements. The Memory Bank is a high-level summary and may not capture every edge case or UI element specified in the roadmap.
 
-**Phase 3: Cookie / Auth Integration (Completed)**
-We have successfully implemented robust authentication (L1/L2/L3) and fixed the `yt-dlp` cookie rejection issue by integrating **Deno** as a native sidecar for signature extraction. JSON cookie imports (L3) are also fully supported.
+**Post-Audit: Revised Roadmap (2026-02-25)**
+Deep technical audit revealed significant gaps between the Settings UI and backend integration. Four new intermediate phases (5.5–5.8) have been inserted before Phase 6.
 
 ## Recent Changes
-- **Filepath Encoding Fix**: Resolved critical issues with corrupted Unicode filepaths on Windows (e.g., accented characters) by completely removing reliance on yt-dlp's cp1252-encoded stdout. Filepaths are now reliably detected via native UTF-16 filesystem scans after the download process exits.
-- **Gallery Wall Feature**: Built a high-performance virtualized masonry grid using `@virtuoso.dev/masonry` to handle thousands of items seamlessly.
-- **Media Pipeline**: Configured backend `ytdlp` commands (`worker.rs`) and `post_process.rs` to download and automatically resize optimal platform thumbnails.
-- **Settings Page**: Added advanced settings UI with `Zustand` and native Rust backend syncing. Implemented download path selector using `tauri-plugin-dialog`, concurrent downloads slider, language toggle, and Trash auto-clean configuration.
+- **Technical Audit**: Analyzed all backend and frontend files. Documented all disconnected settings, stubs, and missing features.
+- **Media Viewer (Phase 5)**: Complete — custom video player, React Portal overlay, inter-post navigation.
+- **Revised Roadmap**: Created Phases 5.5 (Settings Wiring), 5.6 (Format/Quality), 5.7 (Sources/Playlists), 5.8 (Trash/Lifecycle).
 
 ## Current State
-- **Backend**: Auth system is stable. `CookieManager` handles encryption, JSON conversion, and temp file creation. `yt-dlp` uses the embedded Deno binary.
-- **Frontend**: Connect Account UI is functional with improved error handling for browser imports.
-- **Authentication**: 
-    -   **L1 (WebView)**: Verified & Working.
-    -   **L2 (Browser Import)**: Working for Firefox; Restricted for Chrome/Edge (App-Bound Encryption). UX warnings added.
-    -   **L3 (Manual)**: Verified & Working.
-    -   **Validation**: Implemented (rejects guest cookies).
-    -   **Display**: Username and Avatar showing for supported platforms (IG/TikTok/X).
-- **Next Focus**: Completing Phase 5 with the Media Viewer component, then advancing to Phase 6 (Polish & Packaging).
+- **Phase 5 (Wall + Media Viewer)**: ✅ Complete.
+- **Settings Integration**: 🔴 `download_path`, `concurrent_downloads`, `trash_auto_clean_days` saved to DB but NOT read by backend.
+- **Download Engine**: 🔴 Rate limit hardcoded (`5M`), playlists blocked (`--no-playlist`), format selection plumbed but no UI.
+- **Source Entity**: 🔴 DB schema exists but completely unused.
+- **Sidecar Updates**: 🟡 Backend `update_yt_dlp()` exists but no IPC command exposed; UI button is a stub.
 
 ## Next Steps
-1.  **Phase 5: Media Viewer**:
-    -   Implement the fullscreen media viewer when clicking a PostCard.
-2.  **Phase 6: Polish**:
-    -   Dark/Light Mode configurations.
-    -   Global Error Handling UI.
-2.  **Cleanup**: Verify Deno binary updates in production builds.
+1. **Phase 5.5**: Wire all disconnected settings to backend. Start with `download_path` → worker and `concurrent_downloads` → Semaphore.
+2. **Phase 5.6**: Add format/quality selection UI in the AddDownloadModal.
+3. **Phase 5.7**: Enable playlist/channel support and Source CRUD.

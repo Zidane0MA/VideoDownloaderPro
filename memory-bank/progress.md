@@ -36,15 +36,45 @@
 - [x] URL Input & Preview
 - [x] Settings Page (Path, Concurrency, Language, Trash Config)
 
-### Phase 5: Frontend - Gallery (Wall)
+### Phase 5: Frontend - Gallery (Wall) (Completed)
 - [x] Virtualized Grid (via @virtuoso.dev/masonry)
 - [x] Post Card Component
-- [ ] Media Viewer
+- [x] Media Viewer
+    - [x] Two-pane layout (Player + Metadata Sidebar) with React Portal
+    - [x] Custom Video Player: auto-hiding controls, seekbar, volume, fullscreen
+    - [x] Hold-to-speedup (2x) with top badge indicator
+    - [x] Inter-post navigation (keyboard + hover-reveal edge arrows)
+
+### Phase 5.5: Settings Integration & Engine Polish
+- [ ] Wire `download_path` DB setting to download worker (currently hardcoded to system default)
+- [ ] Wire `concurrent_downloads` DB setting to Queue Semaphore (currently hardcoded to `3`)
+- [ ] Make `rate_limit` configurable (currently hardcoded `--limit-rate 5M`)
+- [ ] Expose `update_yt_dlp()` as IPC command; wire "Check for Updates" button
+- [ ] Persist theme preference to DB; wire CSS class/variable swap
+
+### Phase 5.6: Format & Quality Selection
+- [ ] Extend `AddDownloadModal` to show available formats/qualities (from metadata fetcher)
+- [ ] Add "Best Auto" mode + manual quality picker dropdown
+- [ ] Pass `format_selection` through UI → `create_download_task`
+
+### Phase 5.7: Sources & Playlists
+- [ ] Remove `--no-playlist` hardcode; add playlist expansion logic
+- [ ] Build CRUD IPC commands for `source` entity (channels, playlists, creator profiles)
+- [ ] Build frontend "Sources" section (list, add, sync trigger)
+- [ ] Link `post.source_id` when downloading from a source
+
+### Phase 5.8: Trash & Lifecycle
+- [ ] Implement soft-delete (`deleted_at` instead of physical delete)
+- [ ] Add "Trash" view in frontend for soft-deleted items
+- [ ] Implement `trash_auto_clean` background job (periodic at startup)
+- [ ] Add `delete_files_on_remove` toggle in Settings
 
 ### Phase 6: Polish & Packaging
-- [ ] Dark/Light Mode
-- [ ] Error Handling UI
-- [ ] Installer Build
+- [ ] Dark/Light Mode (CSS variables, persistent theme)
+- [ ] Global Error Handling UI
+- [ ] Installer Build (MSI, AppImage)
 
 ## Known Issues / Blockers
-*   **Browser Encryption**: L2 (Browser Import) is limited on Chrome/Edge due to App-Bound Encryption. Users are guided to use L3 (Manual Import).
+*   **Browser Encryption**: L2 (Browser Import) is limited on Chrome/Edge due to App-Bound Encryption.
+*   **Settings Disconnected**: `download_path`, `concurrent_downloads`, `trash_auto_clean_days` are stored in DB but NOT read by the backend (see audit report).
+*   **Source Entity Unused**: `sources` table exists with full schema but zero logic references it.
