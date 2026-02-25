@@ -7,6 +7,7 @@
 We have successfully implemented robust authentication (L1/L2/L3) and fixed the `yt-dlp` cookie rejection issue by integrating **Deno** as a native sidecar for signature extraction. JSON cookie imports (L3) are also fully supported.
 
 ## Recent Changes
+- **Path Saving Fix**: Fixed a bug where yt-dlp's stdout encoding in Windows dropped unicode characters (like `⧸`), causing discrepancies between the database path and the actual file path. Enforced `PYTHONIOENCODING=utf-8` on process spawn.
 - **Gallery Wall Feature**: Built a high-performance virtualized masonry grid using `@virtuoso.dev/masonry` to handle thousands of items seamlessly.
 - **Media Pipeline**: Configured backend `ytdlp` commands (`worker.rs`) and `post_process.rs` to download and automatically resize optimal platform thumbnails.
 - **Settings Page**: Added advanced settings UI with `Zustand` and native Rust backend syncing. Implemented download path selector using `tauri-plugin-dialog`, concurrent downloads slider, language toggle, and Trash auto-clean configuration.

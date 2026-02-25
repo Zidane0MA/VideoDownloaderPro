@@ -225,6 +225,7 @@ impl DownloadWorker {
         }
 
         let mut cmd = Command::new(binary_path);
+        cmd.env("PYTHONIOENCODING", "utf-8");
 
         let deno_path =
             get_binary_path(&self.app, SidecarBinary::Deno).map_err(|e| DownloadError::Failed {

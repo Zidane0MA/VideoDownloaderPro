@@ -25,6 +25,8 @@ pub async fn fetch_metadata(
     // --no-warnings: Keep stderr clean
     // Windows: hide console window
     let mut cmd = Command::new(binary_path);
+    cmd.env("PYTHONIOENCODING", "utf-8");
+
     cmd.arg("--dump-single-json")
         .arg("--flat-playlist")
         .arg("--no-warnings")
