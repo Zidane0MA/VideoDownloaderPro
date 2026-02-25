@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, MouseEvent as ReactMouseEvent } from 'react';
+import { useSettingsStore } from '../../../settings/SettingsStore';
 import { Play, Pause, Volume2, VolumeX, Maximize, FastForward } from 'lucide-react';
 
 interface CustomVideoPlayerProps {
@@ -7,10 +8,13 @@ interface CustomVideoPlayerProps {
 }
 
 export function CustomVideoPlayer({ src, onError }: CustomVideoPlayerProps) {
+    const { settings, updateSetting } = useSettingsStore();
+    const savedVolume = parseFloat(settings.player_volume) || 1;
+
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isPlaying, setIsPlaying] = useState(true); // autoPlay by default
     const [isMuted, setIsMuted] = useState(false);
-    const [volume, setVolume] = useState(1);
+    const [volume, setVolume] = useState(savedVolume);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const [isHoldingToSpeed, setIsHoldingToSpeed] = useState(false);
@@ -18,10 +22,16 @@ export function CustomVideoPlayer({ src, onError }: CustomVideoPlayerProps) {
 
     const holdTimeoutRef = useRef<number | null>(null);
     const controlsTimeoutRef = useRef<number | null>(null);
+    const saveVolumeRef = useRef<number | null>(null);
 
     // Initial setup
     useEffect(() => {
         if (videoRef.current) {
+            // Reset state for the new source
+            setCurrentTime(0);
+            setDuration(0);
+            setIsPlaying(true);
+            setIsHoldingToSpeed(false);
             videoRef.current.volume = volume;
             videoRef.current.play().catch(() => {
                 setIsPlaying(false);
@@ -68,6 +78,11 @@ export function CustomVideoPlayer({ src, onError }: CustomVideoPlayerProps) {
                 setIsMuted(false);
             }
         }
+        // Debounced persist to settings DB
+        if (saveVolumeRef.current) clearTimeout(saveVolumeRef.current);
+        saveVolumeRef.current = window.setTimeout(() => {
+            updateSetting('player_volume', value.toString());
+        }, 300);
     };
 
     const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -272,16 +287,32 @@ export function CustomVideoPlayer({ src, onError }: CustomVideoPlayerProps) {
                                 >
                                     {isMuted || volume === 0 ? <VolumeX size={20} /> : <Volume2 size={20} />}
                                 </button>
-                                <div className="w-0 overflow-hidden group-hover/volume:w-24 transition-all duration-300 ease-out flex items-center">
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="1"
-                                        step="0.01"
-                                        value={isMuted ? 0 : volume}
-                                        onChange={handleVolumeChange}
-                                        className="w-20 h-1.5 accent-brand-500 bg-white/20 rounded-full cursor-pointer"
-                                    />
+                                <div className="w-0 overflow-hidden group-hover/volume:w-[108px] transition-all duration-300 ease-out flex items-center">
+                                    <div className="relative w-24 ml-1.5 group/volume-slider h-5 flex items-center">
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="1"
+                                            step="0.01"
+                                            value={isMuted ? 0 : volume}
+                                            onChange={handleVolumeChange}
+                                            className="absolute w-full h-1.5 opacity-0 cursor-pointer z-10"
+                                        />
+                                        {/* Visual Volume Bar */}
+                                        <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden group-hover/volume-slider:h-2 transition-all">
+                                            <div
+                                                className="h-full bg-brand-500"
+                                                style={{ width: `${(isMuted ? 0 : volume) * 100}%` }}
+                                            />
+                                        </div>
+                                        {/* Thumb */}
+                                        <div
+                                            className="absolute h-3 w-3 bg-white rounded-full pointer-events-none scale-0 group-hover/volume-slider:scale-100 transition-transform shadow-lg"
+                                            style={{
+                                                left: `calc(${(isMuted ? 0 : volume) * 100}% - 6px)`
+                                            }}
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>

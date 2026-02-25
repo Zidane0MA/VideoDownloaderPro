@@ -25,6 +25,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
                 concurrent_downloads: '3',
                 language: 'en',
                 trash_auto_clean_days: '30',
+                player_volume: '1',
             };
 
             set({

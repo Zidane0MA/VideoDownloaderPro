@@ -1,14 +1,14 @@
 use crate::entity::setting;
 use crate::entity::setting::Entity as Setting;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
+use crate::AppState;
+use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 use std::collections::HashMap;
+use tauri::State;
 
 #[tauri::command]
-pub async fn get_settings(
-    db: tauri::State<'_, DatabaseConnection>,
-) -> Result<HashMap<String, String>, String> {
+pub async fn get_settings(state: State<'_, AppState>) -> Result<HashMap<String, String>, String> {
     let settings = Setting::find()
-        .all(db.inner())
+        .all(&state.db)
         .await
         .map_err(|e: sea_orm::DbErr| e.to_string())?;
 
@@ -24,11 +24,11 @@ pub async fn get_settings(
 pub async fn update_setting(
     key: String,
     value: String,
-    db: tauri::State<'_, DatabaseConnection>,
+    state: State<'_, AppState>,
 ) -> Result<(), String> {
     // Check if it exists
     let existing = Setting::find_by_id(&key)
-        .one(db.inner())
+        .one(&state.db)
         .await
         .map_err(|e: sea_orm::DbErr| e.to_string())?;
 
@@ -38,7 +38,7 @@ pub async fn update_setting(
         active.value = Set(value);
         active.updated_at = Set(chrono::Utc::now());
         active
-            .update(db.inner())
+            .update(&state.db)
             .await
             .map_err(|e: sea_orm::DbErr| e.to_string())?;
     } else {
@@ -48,7 +48,7 @@ pub async fn update_setting(
             updated_at: Set(chrono::Utc::now()),
         };
         new_setting
-            .insert(db.inner())
+            .insert(&state.db)
             .await
             .map_err(|e: sea_orm::DbErr| e.to_string())?;
     }

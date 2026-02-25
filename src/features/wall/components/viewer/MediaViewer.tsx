@@ -86,7 +86,7 @@ export function MediaViewer({ post, onClose, onNextPost, onPrevPost }: MediaView
 
             {/* Main Player Area Left */}
             <div className="relative flex-1 flex items-center justify-center min-h-[50vh] bg-black group/nav">
-                <MediaPlayer media={currentMedia} />
+                <MediaPlayer key={currentMedia.id} media={currentMedia} />
 
                 {/* Post Navigation (Edge buttons) */}
                 {onPrevPost && (
