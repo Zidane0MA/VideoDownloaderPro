@@ -8,7 +8,7 @@ pub mod migration;
 pub mod queue;
 pub mod sidecar;
 
-use sea_orm::DatabaseConnection;
+use sea_orm::{DatabaseConnection, EntityTrait};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
@@ -91,8 +91,29 @@ pub fn run() {
             let _ = cookie_manager.init(); // Fire and forget init (create temp dir)
             app.manage(cookie_manager);
 
-            // Initialize Download Queue (Max 3 concurrent downloads)
-            let queue = queue::DownloadQueue::new(app.handle().clone(), 3);
+            // Read `concurrent_downloads` from the DB; default to 3 if absent or invalid.
+            let initial_concurrency: usize = tauri::async_runtime::block_on(async {
+                use crate::entity::setting::Entity as Setting;
+                Setting::find_by_id("concurrent_downloads")
+                    .one(&db)
+                    .await
+                    .ok()
+                    .flatten()
+                    .and_then(|s| s.value.parse::<usize>().ok())
+                    .map(|n| n.clamp(1, 10))
+                    .unwrap_or(3)
+            });
+            tracing::info!("Queue concurrency on startup: {}", initial_concurrency);
+
+            // Create the watch channel that allows live concurrency updates.
+            let (concurrency_tx, concurrency_rx) = tokio::sync::watch::channel(initial_concurrency);
+
+            // Register sender as Tauri state so `update_setting` can push to it.
+            use commands::settings::ConcurrencyTx;
+            app.manage(ConcurrencyTx(concurrency_tx));
+
+            // Initialize Download Queue with DB-sourced concurrency limit.
+            let queue = queue::DownloadQueue::new(app.handle().clone(), concurrency_rx);
             app.manage(queue.clone());
 
             // Start scheduler in background

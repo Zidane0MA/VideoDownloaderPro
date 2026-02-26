@@ -62,7 +62,7 @@
     -   Emit `download-progress` events to frontend.
     -   Handle `--write-thumbnail --convert-thumbnails jpg`.
 4.  **Download Queue:**
-    -   Worker pool (N configurable workers, default 3).
+    -   Worker pool (N configurable workers, default 3, supports live-reload via `watch` channel).
     -   FIFO scheduling with priority (manual > sync).
     -   State machine: QUEUED → FETCHING_META → READY → DOWNLOADING → COMPLETED/FAILED.
     -   Pause: kill yt-dlp process, set status to PAUSED.
@@ -104,7 +104,7 @@
     -   Optimistic updates on Pause/Cancel actions.
 4.  **Settings Page:**
     -   Download path selector (native file picker).
-    -   Concurrent downloads slider (1-10).
+    -   Concurrent downloads slider (1-10, applies live via background watch channel).
     -   **Accounts section:**
         -   Per-platform session status indicators (ACTIVE ● / EXPIRED ○ / NONE ○).
         -   "Connect" / "Disconnect" buttons per platform.

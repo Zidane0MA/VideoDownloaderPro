@@ -7,13 +7,15 @@ The Download Queue System manages concurrent video downloads to ensure system st
 ```mermaid
 graph TD
     UI[Frontend] -->|IPC: create_download_task| CMD[Command Handler]
+    UI -->|IPC: update_setting| CMD
     UI -->|IPC: cancel / retry / status| CMD
     CMD -->|Insert / Update| DB[(SQLite)]
     CMD -->|Notify| Queue[DownloadQueue]
+    CMD -->|Watch Channel| Queue
     
     subgraph Background Scheduler
         Queue -->|Recover stale| DB
-        Queue -->|Acquire Permit| Sem[Semaphore — Limit: 3]
+        Queue -->|Acquire Permit| Sem[Semaphore]
         Queue -->|Poll by priority| DB
         Queue -->|Spawn + child token| Worker[DownloadWorker]
     end
@@ -29,7 +31,8 @@ graph TD
 ## Key Components
 
 ### 1. DownloadQueue (`src-tauri/src/queue/manager.rs`)
-- **Semaphore**: Limits concurrent downloads (default: 3).
+- **Semaphore**: Limits concurrent downloads (Initial value read from DB, updated live via `watch` channel).
+- **Watch Channel**: `tokio::sync::watch` used to propagate concurrency limit changes from the settings command to the scheduler loop.
 - **Notify**: Async notification mechanism to wake up the scheduler when new tasks are added.
 - **CancellationToken**: Parent token enables graceful shutdown; child tokens enable per-task cancellation.
 - **Task Token Registry**: `HashMap<String, CancellationToken>` tracks active tasks for targeted cancellation.
@@ -102,7 +105,12 @@ The queue is initialized in `lib.rs` and managed as Tauri state.
 
 ```rust
 // In lib.rs
-let queue = queue::DownloadQueue::new(app.handle().clone(), 3);
+// Read from DB, create watch channel, manage sender
+let initial_concurrency = read_from_db(); 
+let (tx, rx) = watch::channel(initial_concurrency);
+app.manage(ConcurrencyTx(tx));
+
+let queue = queue::DownloadQueue::new(app.handle().clone(), rx);
 app.manage(queue.clone());
 tauri::async_runtime::spawn(async move {
     queue.start_scheduler().await;

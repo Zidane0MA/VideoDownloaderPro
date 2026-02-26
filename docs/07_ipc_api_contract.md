@@ -274,6 +274,9 @@ Updates a single setting.
 await invoke('update_setting', { key: string, value: string });
 ```
 
+> [!NOTE]
+> For the `concurrent_downloads` key, the backend propagates the change live to the queue scheduler via a `tokio::sync::watch` channel. No app restart is required.
+
 ---
 
 #### `get_disk_usage`

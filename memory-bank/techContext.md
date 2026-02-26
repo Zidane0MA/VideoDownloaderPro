@@ -15,7 +15,7 @@
 *   **Plugins:** `tauri-plugin-dialog` (File picker), `tauri-plugin-shell`, `tauri-plugin-opener`
 *   **Database ORM:** Sea-ORM (Async, SQLite)
 *   **Serialization:** Serde
-*   **Async:** Tokio
+*   **Async:** Tokio (including `watch` channels for settings live-reload)
 *   **Logging:** Tracing
 
 ### Infrastructure / Binaries

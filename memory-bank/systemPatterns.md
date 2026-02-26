@@ -18,6 +18,7 @@ graph TD
 ### 1. IPC Communication
 *   **Command/Query Separation:** `invoke()` is used for all state-mutating commands (create task, update settings) and heavy queries.
 *   **Events:** `emit()` is used for high-frequency updates (download progress, log streams) to avoid request/response overhead.
+*   **Live-Reload Pattern:** For settings like `concurrent_downloads`, a `tokio::sync::watch` channel is used to propagate changes from the IPC command to background workers without app restart.
 *   **Typed Contract:** All IPC payloads are strictly typed in TypeScript and Rust (see `07_ipc_api_contract.md`).
 
 ### 6. Git Strategy regarding Sidecars
@@ -47,6 +48,7 @@ A progressive strategy to handle platform restrictions (YouTube, Instagram, etc.
 *   **Process Management (Windows):** Uses `taskkill /F /T /PID` to terminate the entire process tree (including child processes like `ffmpeg`) because standard `Child::kill()` leaves orphans. On non-Windows, falls back to standard kill.
 *   **Filename Detection & File Size (Windows Encoding Fix):** yt-dlp's stdout on Windows uses cp1252, corrupting non-ASCII characters in filenames. Instead of parsing stdout for filenames, the system takes a snapshot of the output directory before the download and compares it after the process exits. This uses Rust's native Windows UTF-16 filesystem APIs (`std::fs::read_dir`), ensuring perfectly accurate Unicode paths, and then reads the actual final file size from disk.
 *   **Pause/Resume:** Implemented via `AtomicBool` for global queue pause and cancellation tokens for individual tasks.
+*   **Live Concurrency Tuning:** The queue limit (Semaphore size) can be adjusted at runtime via a `watch` channel. The scheduler loop polls for limit increases and adds permits immediately; shrinking happens naturally as slots drain.
 
 ### 5. Error Handling
 *   **Categorized Errors:** Network, Platform, Disk, Auth, internal.

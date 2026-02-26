@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::{Mutex, Notify, Semaphore};
+use tokio::sync::{watch, Mutex, Notify, Semaphore};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -26,17 +26,26 @@ pub struct DownloadQueue {
     task_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
     /// Global pause flag — when true, the scheduler stops picking up new tasks.
     paused: Arc<AtomicBool>,
+    /// Receives live concurrency-limit updates from `update_setting`.
+    concurrency_rx: watch::Receiver<usize>,
 }
 
 impl DownloadQueue {
-    pub fn new(app_handle: AppHandle, max_concurrency: usize) -> Self {
+    /// Create a new queue.
+    ///
+    /// * `initial_concurrency` – number of slots read from the DB at startup.
+    /// * `concurrency_rx` – watch receiver; the scheduler polls this to apply
+    ///   live limit changes without restarting.
+    pub fn new(app_handle: AppHandle, concurrency_rx: watch::Receiver<usize>) -> Self {
+        let initial_concurrency = *concurrency_rx.borrow();
         Self {
             app_handle,
             notify: Arc::new(Notify::new()),
-            semaphore: Arc::new(Semaphore::new(max_concurrency)),
+            semaphore: Arc::new(Semaphore::new(initial_concurrency)),
             shutdown_token: CancellationToken::new(),
             task_tokens: Arc::new(Mutex::new(HashMap::new())),
             paused: Arc::new(AtomicBool::new(false)),
+            concurrency_rx,
         }
     }
 
@@ -116,11 +125,41 @@ impl DownloadQueue {
         // Recover any stale tasks from previous session
         self.recover_stale_tasks().await;
 
+        // Track the concurrency cap as seen by this loop so we can diff.
+        let mut current_cap = *self.concurrency_rx.borrow();
+        let mut concurrency_rx = self.concurrency_rx.clone();
+
         loop {
             // Check for shutdown
             if self.shutdown_token.is_cancelled() {
                 tracing::info!("Scheduler shutting down");
                 break;
+            }
+
+            // Live-reload: apply any pending concurrency change.
+            // `has_changed` is true once after each new send on the watch channel.
+            if concurrency_rx.has_changed().unwrap_or(false) {
+                let new_cap = *concurrency_rx.borrow_and_update();
+                if new_cap > current_cap {
+                    // Growing: add the extra permits so waiting tasks can start.
+                    let extra = new_cap - current_cap;
+                    self.semaphore.add_permits(extra);
+                    tracing::info!(
+                        "Concurrency raised {} → {} (+{} permits)",
+                        current_cap,
+                        new_cap,
+                        extra
+                    );
+                } else if new_cap < current_cap {
+                    // Shrinking: do nothing — the semaphore won't issue new permits
+                    // once available count reaches the new cap.  In-flight tasks drain naturally.
+                    tracing::info!(
+                        "Concurrency lowered {} → {} (draining naturally)",
+                        current_cap,
+                        new_cap
+                    );
+                }
+                current_cap = new_cap;
             }
 
             // Check for global pause — wait until resumed
