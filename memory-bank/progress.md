@@ -46,7 +46,7 @@
     - [x] Inter-post navigation (keyboard + hover-reveal edge arrows)
 
 ### Phase 5.5: Settings Integration & Engine Polish
-- [ ] Wire `download_path` DB setting to download worker (currently hardcoded to system default)
+- [x] Wire `download_path` DB setting to download worker (currently hardcoded to system default)
 - [ ] Wire `concurrent_downloads` DB setting to Queue Semaphore (currently hardcoded to `3`)
 - [ ] Make `rate_limit` configurable (currently hardcoded `--limit-rate 5M`)
 - [ ] Expose `update_yt_dlp()` as IPC command; wire "Check for Updates" button
