@@ -214,10 +214,38 @@ impl DownloadQueue {
                 let _permit = permit;
 
                 let worker = DownloadWorker::new(app.clone());
-                let download_dir = app
-                    .path()
-                    .download_dir()
-                    .unwrap_or(PathBuf::from("downloads"));
+
+                // Read download_path from DB settings; fall back to OS default
+                let download_dir = {
+                    use crate::entity::setting::Entity as Setting;
+                    let db_ref = &app.state::<AppState>().db;
+                    let custom_path = Setting::find_by_id("download_path")
+                        .one(db_ref)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|s| s.value)
+                        .filter(|v| !v.is_empty());
+
+                    match custom_path {
+                        Some(p) => {
+                            // Expand ~ to actual home directory
+                            if p.starts_with("~/") || p.starts_with("~\\") {
+                                if let Some(home) = dirs::home_dir() {
+                                    home.join(&p[2..])
+                                } else {
+                                    PathBuf::from(p)
+                                }
+                            } else {
+                                PathBuf::from(p)
+                            }
+                        }
+                        None => app
+                            .path()
+                            .download_dir()
+                            .unwrap_or(PathBuf::from("downloads")),
+                    }
+                };
 
                 // Ensure dir exists
                 if !download_dir.exists() {
@@ -321,11 +349,10 @@ impl DownloadQueue {
                                                 )
                                                 .await;
 
-                                            // Update media row with thumbnail paths
+                                            // Update media row with thumbnail path
                                             let _ = media::Entity::update(media::ActiveModel {
                                                 id: Set(media_id.clone()),
                                                 thumbnail_path: Set(thumbs.thumbnail_path),
-                                                thumbnail_sm_path: Set(thumbs.thumbnail_sm_path),
                                                 ..Default::default()
                                             })
                                             .exec(&db)

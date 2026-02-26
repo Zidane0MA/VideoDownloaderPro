@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Download, Images, Settings as SettingsIcon, Zap, Plus } from "lucide-react";
 import { AddDownloadModal } from "./components/AddDownloadModal";
 import { DownloadsList } from "./components/DownloadsList";
 import { Settings } from "./features/settings/Settings";
 import { Wall } from "./features/wall/Wall";
+import { useDownloadCompletionSync } from "./features/wall/api/useDownloadCompletionSync";
 
 type View = 'downloads' | 'wall' | 'settings';
 
@@ -12,6 +13,19 @@ function App() {
   const { t, i18n } = useTranslation();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [currentView, setCurrentView] = useState<View>('downloads');
+  const [newWallItems, setNewWallItems] = useState(0);
+
+  // Global listener — alive regardless of which tab is active.
+  // When a download completes and we're NOT on wall, increment the badge counter.
+  const handleNewContent = useCallback(() => {
+    setNewWallItems((prev) => prev + 1);
+  }, []);
+  useDownloadCompletionSync(handleNewContent);
+
+  const switchView = (view: View) => {
+    setCurrentView(view);
+    if (view === 'wall') setNewWallItems(0); // Clear badge on enter
+  };
 
   const toggleLanguage = () => {
     const newLang = i18n.language === "en" ? "es" : "en";
@@ -58,14 +72,19 @@ function App() {
           ].map((item) => (
             <button
               key={item.id}
-              onClick={() => setCurrentView(item.id as View)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${currentView === item.id
+              onClick={() => switchView(item.id as View)}
+              className={`relative flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${currentView === item.id
                 ? "border-brand-500 text-brand-400"
                 : "border-transparent text-surface-200/60 hover:text-surface-100"
                 }`}
             >
               <item.icon className="w-4 h-4" />
               {item.label}
+              {item.id === 'wall' && newWallItems > 0 && currentView !== 'wall' && (
+                <span className="absolute -top-0.5 right-1 flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-brand-500 rounded-full shadow-lg shadow-brand-500/40 animate-badge-pop">
+                  {newWallItems > 99 ? '99+' : newWallItems}
+                </span>
+              )}
             </button>
           ))}
         </div>

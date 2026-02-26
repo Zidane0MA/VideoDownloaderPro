@@ -3,10 +3,8 @@ use tokio::process::Command;
 
 /// Result of post-processing a downloaded media file.
 pub struct ThumbnailResult {
-    /// Path to the original platform thumbnail (from yt-dlp --write-thumbnail).
+    /// Path to the 300px thumbnail for the Wall gallery.
     pub thumbnail_path: Option<String>,
-    /// Path to the 300px resized thumbnail for the Wall gallery.
-    pub thumbnail_sm_path: Option<String>,
 }
 
 /// Find the yt-dlp-generated thumbnail for a media file.
@@ -51,8 +49,10 @@ pub async fn process_thumbnails(
             let thumb_sm = generate_resized_thumbnail(ffmpeg_path, &thumb_path).await;
 
             ThumbnailResult {
-                thumbnail_path: Some(thumb_path.to_string_lossy().to_string()),
-                thumbnail_sm_path: thumb_sm.map(|p| p.to_string_lossy().to_string()).ok(),
+                thumbnail_path: thumb_sm
+                    .map(|p| p.to_string_lossy().to_string())
+                    .ok()
+                    .or_else(|| Some(thumb_path.to_string_lossy().to_string())),
             }
         }
         None => {
@@ -66,20 +66,17 @@ pub async fn process_thumbnails(
                 match extracted {
                     Ok(path) => ThumbnailResult {
                         thumbnail_path: Some(path.to_string_lossy().to_string()),
-                        thumbnail_sm_path: Some(path.to_string_lossy().to_string()),
                     },
                     Err(e) => {
                         tracing::warn!("Frame extraction failed: {}", e);
                         ThumbnailResult {
                             thumbnail_path: None,
-                            thumbnail_sm_path: None,
                         }
                     }
                 }
             } else {
                 ThumbnailResult {
                     thumbnail_path: None,
-                    thumbnail_sm_path: None,
                 }
             }
         }

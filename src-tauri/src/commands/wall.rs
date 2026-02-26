@@ -48,7 +48,6 @@ pub struct MediaResponse {
     pub media_type: String,
     pub file_path: String,
     pub thumbnail_path: Option<String>,
-    pub thumbnail_sm_path: Option<String>,
     pub order_index: i32,
     pub width: Option<i32>,
     pub height: Option<i32>,
@@ -105,7 +104,6 @@ pub async fn get_posts(
                 media_type: m.media_type,
                 file_path: m.file_path,
                 thumbnail_path: m.thumbnail_path,
-                thumbnail_sm_path: m.thumbnail_sm_path,
                 order_index: m.order_index,
                 width: m.width,
                 height: m.height,
@@ -174,11 +172,6 @@ pub async fn delete_post(state: State<'_, AppState>, post_id: String) -> Result<
         if let Some(thumb) = &m.thumbnail_path {
             if Path::new(thumb).exists() {
                 let _ = move_to_trash(thumb);
-            }
-        }
-        if let Some(thumb_sm) = &m.thumbnail_sm_path {
-            if Path::new(thumb_sm).exists() {
-                let _ = move_to_trash(thumb_sm);
             }
         }
     }

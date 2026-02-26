@@ -5,8 +5,7 @@ import { LazyThumbnail } from './LazyThumbnail';
 
 export const PostCard = memo(
     function PostCard({ post, onClick }: { post: Post; onClick?: () => void }) {
-        // Prefer the small thumbnail for wall gallery
-        const thumb = post.media[0]?.thumbnail_sm_path ?? post.media[0]?.thumbnail_path;
+        const thumb = post.media[0]?.thumbnail_path;
 
         return (
             <article

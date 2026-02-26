@@ -11,7 +11,6 @@ pub struct Model {
     pub media_type: String,
     pub file_path: String,
     pub thumbnail_path: Option<String>,
-    pub thumbnail_sm_path: Option<String>,
     pub order_index: i32,
     pub width: Option<i32>,
     pub height: Option<i32>,

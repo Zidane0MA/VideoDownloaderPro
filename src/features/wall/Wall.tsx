@@ -1,7 +1,6 @@
 import { useEffect, useRef, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { usePostsInfinite } from './api/usePostsInfinite';
-import { useDownloadCompletionSync } from './api/useDownloadCompletionSync';
 import { WallGrid } from './components/WallGrid';
 import { useResponsiveColumns } from './hooks/useResponsiveColumns';
 import { MediaViewer } from './components/viewer/MediaViewer';
@@ -10,7 +9,7 @@ import type { Post } from '../../types/wall';
 
 export function Wall() {
     const { t } = useTranslation();
-    useDownloadCompletionSync();
+
     const { data, fetchNextPage, hasNextPage, isFetchingNextPage, status } =
         usePostsInfinite();
     const observerRef = useRef<HTMLDivElement>(null);

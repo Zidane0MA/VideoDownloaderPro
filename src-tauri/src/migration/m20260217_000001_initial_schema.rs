@@ -129,7 +129,6 @@ impl MigrationTrait for Migration {
                     .col(string(Media::Type).not_null())
                     .col(string(Media::FilePath).not_null())
                     .col(string_null(Media::ThumbnailPath))
-                    .col(string_null(Media::ThumbnailSmPath))
                     .col(
                         integer(Media::OrderIndex)
                             .default(Value::Int(Some(0)))
@@ -472,7 +471,6 @@ pub enum Media {
     Type,
     FilePath,
     ThumbnailPath,
-    ThumbnailSmPath,
     OrderIndex,
     Width,
     Height,

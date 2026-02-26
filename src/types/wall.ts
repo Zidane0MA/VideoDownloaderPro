@@ -3,7 +3,6 @@ export interface Media {
     media_type: string;
     file_path: string;
     thumbnail_path: string | null;
-    thumbnail_sm_path: string | null;
     order_index: number;
     width: number | null;
     height: number | null;

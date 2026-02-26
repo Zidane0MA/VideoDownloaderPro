@@ -10,7 +10,7 @@ export default {
       colors: {
         // Primary brand palette
         brand: {
-          50:  '#eef2ff',
+          50: '#eef2ff',
           100: '#e0e7ff',
           200: '#c7d2fe',
           300: '#a5b4fc',
@@ -24,7 +24,7 @@ export default {
         },
         // Surface colors for dark mode
         surface: {
-          50:  '#f8fafc',
+          50: '#f8fafc',
           100: '#f1f5f9',
           200: '#e2e8f0',
           700: '#1e293b',
@@ -35,6 +35,16 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+      },
+      keyframes: {
+        'badge-pop': {
+          '0%': { transform: 'scale(0)', opacity: '0' },
+          '60%': { transform: 'scale(1.2)' },
+          '100%': { transform: 'scale(1)', opacity: '1' },
+        },
+      },
+      animation: {
+        'badge-pop': 'badge-pop 0.3s ease-out',
       },
     },
   },

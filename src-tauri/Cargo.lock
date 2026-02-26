@@ -6233,6 +6233,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "cookie",
+ "dirs",
  "once_cell",
  "regex",
  "reqwest",

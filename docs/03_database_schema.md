@@ -77,8 +77,7 @@ Individual media files attached to a post (supports carousels).
 | `post_id` | TEXT | FK → `posts.id` | |
 | `type` | TEXT | NOT NULL | Enum: `VIDEO`, `IMAGE`, `AUDIO` |
 | `file_path` | TEXT | NOT NULL | Absolute local path |
-| `thumbnail_path` | TEXT | | Original thumbnail (from yt-dlp) |
-| `thumbnail_sm_path` | TEXT | | Reduced thumbnail (300px, for Wall) |
+| `thumbnail_path` | TEXT | | 300px thumbnail for Wall gallery |
 | `order_index` | INTEGER | DEFAULT 0 | Position in carousel |
 | `width` | INTEGER | | Pixels |
 | `height` | INTEGER | | Pixels |
