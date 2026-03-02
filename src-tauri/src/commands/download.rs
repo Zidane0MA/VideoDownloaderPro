@@ -4,10 +4,13 @@ use serde::Serialize;
 use tauri::State;
 use uuid::Uuid;
 
+use crate::auth::cookie_manager::CookieManager;
 use crate::entity::{download_task, post};
 use crate::metadata::models::YtDlpVideo;
+use crate::metadata::{fetcher, models::YtDlpOutput};
 use crate::queue::DownloadQueue;
 use crate::AppState;
+use std::sync::Arc;
 
 #[derive(serde::Deserialize)]
 pub struct CreateDownloadTaskRequest {
@@ -300,4 +303,44 @@ pub async fn pause_queue(queue: State<'_, DownloadQueue>) -> Result<(), String> 
 pub async fn resume_queue(queue: State<'_, DownloadQueue>) -> Result<(), String> {
     queue.resume_queue();
     Ok(())
+}
+
+#[tauri::command]
+pub async fn fetch_metadata_command(
+    app: tauri::AppHandle,
+    cookie_manager: State<'_, Arc<CookieManager>>,
+    url: String,
+) -> Result<YtDlpOutput, String> {
+    // Generate temp cookie path if applicable (e.g. for age-gated/member videos)
+    let mut temp_cookie_path = None;
+    let platform_id = if url.contains("youtube.com") || url.contains("youtu.be") {
+        Some("youtube")
+    } else if url.contains("tiktok.com") {
+        Some("tiktok")
+    } else if url.contains("instagram.com") {
+        Some("instagram")
+    } else if url.contains("x.com") || url.contains("twitter.com") {
+        Some("x")
+    } else {
+        None
+    };
+
+    if let Some(pid) = platform_id {
+        if let Ok(Some(path)) = cookie_manager.create_temp_cookie_file(pid).await {
+            tracing::info!("Using cookies for fetch_metadata_command on {}", pid);
+            temp_cookie_path = Some(path);
+        }
+    }
+
+    // Fetch metadata
+    let result = fetcher::fetch_metadata(&app, &url, temp_cookie_path.as_ref())
+        .await
+        .map_err(|e| e.to_string());
+
+    // Cleanup cookies
+    if let Some(path) = temp_cookie_path {
+        let _ = cookie_manager.cleanup_temp_file(&path).await;
+    }
+
+    result
 }
