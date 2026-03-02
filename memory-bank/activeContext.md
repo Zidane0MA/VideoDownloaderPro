@@ -16,12 +16,13 @@ Deep technical audit revealed significant gaps between the Settings UI and backe
 ## Current State
 - **Phase 4 & 5**: Marked COMPLETED but audit found missing "Integrated" features (Metadata preview, Quality selector, Search/Filter).
 - **Settings Integration**: ✅ `download_path` and `concurrent_downloads` fully integrated. `trash_auto_clean_days` still disconnected.
+- **Format & Quality Selection (Phase 5.6)**: ✅ Complete. Professional UI built using `ProcessedMetadata` for video qualities, audio tracks, and subtitles. `DownloadOptions` JSON structure used for format selection in worker.
 - **Download Engine**: 🔴 Rate limit hardcoded (`5M`), playlists blocked (`--no-playlist`), Hierarchy/Checksums missing.
 - **IPC API Contract**: 🔴 Major drift; documented commands/events missing from backend.
 - **Source Entity**: 🔴 DB schema exists but completely unused.
 - **Sidecar Updates**: 🟡 Backend `update_yt_dlp()` exists but no IPC command exposed; UI button is a stub.
 
 ## Next Steps
-1. **Phase 5.5**: Continue wiring disconnected settings. Next: `rate_limit` (configurable) and `update_yt_dlp()` IPC command.
-2. **Phase 5.6**: Add format/quality selection UI in the AddDownloadModal.
-3. **Phase 5.7**: Enable playlist/channel support and Source CRUD.
+1. **Phase 5.5 (Remaining)**: Wire `rate_limit` (configurable) and `update_yt_dlp()` IPC command.
+2. **Phase 5.7**: Enable playlist/channel support and Source CRUD.
+3. **Phase 5.8**: Implement Trash view and soft-delete lifecycle.

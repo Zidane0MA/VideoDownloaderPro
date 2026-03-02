@@ -23,7 +23,7 @@ const taskId = await invoke<string>('create_download_task', {
 | Param | Type | Required | Description |
 |---|---|---|---|
 | `url` | string | ✅ | URL to download |
-| `formatSelection` | string | ❌ | yt-dlp format string (e.g., `bestvideo+bestaudio/best`) |
+| `formatSelection` | string | ❌ | JSON string of `DownloadOptions` (e.g., `{"format_id": "137", "audio_only": false, "container": "mp4"}`) or legacy plain string |
 
 **Returns:** `string` — UUID of the created task.
 **Errors:** `INVALID_URL`, `DUPLICATE_URL` (if post with same URL already exists).
@@ -57,7 +57,71 @@ interface DownloadTask {
   errorMessage: string | null;
   retries: number;
   maxRetries: number;
-  formatSelection: string | null;
+  formatSelection: string | null; // JSON DownloadOptions or string
+  downloadedBytes: number | null;
+  totalBytes: number | null;
+  title: string | null;
+  thumbnail: string | null;
+}
+```
+
+---
+
+#### `fetch_metadata_command`
+Fetches metadata for a given URL and processes it into UI-friendly formats for Phase 5.6.
+
+```typescript
+const metadata = await invoke<ProcessedMetadata>('fetch_metadata_command', {
+  url: string
+});
+```
+
+**Returns:**
+
+```typescript
+interface ProcessedMetadata {
+  id: string;
+  title: string;
+  uploader: string | null;
+  duration: number | null;
+  thumbnail_url: string | null;
+  video_qualities: VideoQuality[]; // Deduplicated, sorted qualities
+  audio_tracks: AudioTrack[];      // Deduplicated, sorted audio
+  subtitle_tracks: SubtitleTrack[];// Deduped subtitle options
+}
+
+interface VideoQuality {
+  label: string;
+  format_id: string;
+  height: number;
+  fps: number | null;
+  vcodec: string;
+  dynamic_range: string;
+  container: string;
+  filesize: number | null;
+  has_audio: boolean;
+}
+
+interface AudioTrack {
+  label: string;
+  format_id: string;
+  acodec: string;
+  bitrate_kbps: number | null;
+  sample_rate: number | null;
+  channels: number | null;
+  language: string | null;
+  filesize: number | null;
+  is_default: boolean;
+}
+
+interface SubtitleTrack {
+  language_code: string;
+  label: string;
+  is_auto_generated: boolean;
+}
+```
+
+**Errors:** Returns basic metadata (empty formats) for playlists if detailed fetching fails.
   createdAt: string;      // ISO 8601
   startedAt: string | null;
   completedAt: string | null;

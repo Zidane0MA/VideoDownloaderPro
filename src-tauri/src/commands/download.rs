@@ -6,8 +6,9 @@ use uuid::Uuid;
 
 use crate::auth::cookie_manager::CookieManager;
 use crate::entity::{download_task, post};
-use crate::metadata::models::YtDlpVideo;
-use crate::metadata::{fetcher, models::YtDlpOutput};
+use crate::metadata::fetcher;
+use crate::metadata::format_processor::{self, ProcessedMetadata};
+use crate::metadata::models::{YtDlpOutput, YtDlpVideo};
 use crate::queue::DownloadQueue;
 use crate::AppState;
 use std::sync::Arc;
@@ -305,12 +306,18 @@ pub async fn resume_queue(queue: State<'_, DownloadQueue>) -> Result<(), String>
     Ok(())
 }
 
+/// Fetches metadata for a URL and returns processed, UI-ready format information.
+///
+/// Returns [`ProcessedMetadata`] for single videos, which includes deduplicated
+/// video qualities, audio tracks, and subtitle tracks. For playlists or
+/// unrecognized output types, returns a minimal `ProcessedMetadata` so the
+/// frontend can still offer fallback mode.
 #[tauri::command]
 pub async fn fetch_metadata_command(
     app: tauri::AppHandle,
     cookie_manager: State<'_, Arc<CookieManager>>,
     url: String,
-) -> Result<YtDlpOutput, String> {
+) -> Result<ProcessedMetadata, String> {
     // Generate temp cookie path if applicable (e.g. for age-gated/member videos)
     let mut temp_cookie_path = None;
     let platform_id = if url.contains("youtube.com") || url.contains("youtu.be") {
@@ -332,8 +339,8 @@ pub async fn fetch_metadata_command(
         }
     }
 
-    // Fetch metadata
-    let result = fetcher::fetch_metadata(&app, &url, temp_cookie_path.as_ref())
+    // Fetch raw metadata
+    let raw_output = fetcher::fetch_metadata(&app, &url, temp_cookie_path.as_ref())
         .await
         .map_err(|e| e.to_string());
 
@@ -342,5 +349,25 @@ pub async fn fetch_metadata_command(
         let _ = cookie_manager.cleanup_temp_file(&path).await;
     }
 
-    result
+    let raw_output = raw_output?;
+
+    // Transform to ProcessedMetadata
+    match raw_output {
+        YtDlpOutput::Video(ref video) | YtDlpOutput::VideoFallback(ref video) => {
+            Ok(format_processor::process_metadata(video))
+        }
+        YtDlpOutput::Playlist(ref playlist) => {
+            // For playlists, return minimal metadata so frontend shows fallback mode
+            Ok(ProcessedMetadata {
+                id: playlist.id.clone(),
+                title: playlist.title.clone(),
+                uploader: playlist.uploader.clone(),
+                duration: None,
+                thumbnail_url: None,
+                video_qualities: vec![],
+                audio_tracks: vec![],
+                subtitle_tracks: vec![],
+            })
+        }
+    }
 }

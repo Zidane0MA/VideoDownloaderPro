@@ -150,12 +150,10 @@ stateDiagram-v2
 | `session-status-changed` | Login, logout, or expiration |
 | `auth-required` | Download needs auth, no valid cookies |
 
-> Full typed interfaces for all commands and events are documented in [07_ipc_api_contract.md](file:///c:/VideoDownloaderPro/documentation/07_ipc_api_contract.md).
+> Full typed interfaces for all commands and events are documented in [07_ipc_api_contract.md](07_ipc_api_contract.md).
 
 ---
 
 ## 7. Settings → Accounts UI
 
 The Settings page includes an **Accounts** section showing per-platform session status with login/logout controls. Users can also configure their preferred cookie method (WebView / Browser / File) and select a fallback browser.
-
-> Full UI mockups are available in the [cookie_system_analysis.md](file:///C:/Users/loler/.gemini/antigravity/brain/67857993-11b4-44a3-93a6-03d534cc0a0b/cookie_system_analysis.md) artifact.

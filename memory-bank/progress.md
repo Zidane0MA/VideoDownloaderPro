@@ -36,8 +36,8 @@
 - [x] URL Input & Preview
 - [x] Settings Page (Path, Concurrency, Language, Trash Config)
 - [ ] Disk Space Dashboard: Docs state Phase 4 includes a dashboard in Settings. Status: Currently a non-functional stub.
-- [ ] Metadata Preview: Docs state Phase 4 includes showing a preview after pasting a URL. Status: Not implemented.
-- [ ] Quality Selector: Docs state Phase 4 includes a format/quality dropdown. Status: Plumbed in backend but missing UI (deferred to Phase 5.6).
+- [x] Metadata Preview: UI now shows thumbnail, title, uploader, and duration when adding a download.
+- [x] Quality Selector: Implemented as part of Phase 5.6.
 
 ### Phase 5: Frontend - Gallery (Wall) (Partial - *Note: Search & Filter deferred*)
 - [x] Virtualized Grid (via @virtuoso.dev/masonry)
@@ -62,10 +62,11 @@
 - [ ] Expose `update_yt_dlp()` as IPC command; wire "Check for Updates" button
 - [ ] Persist theme preference to DB; wire CSS class/variable swap
 
-### Phase 5.6: Format & Quality Selection
-- [ ] Extend `AddDownloadModal` to show available formats/qualities (from metadata fetcher)
-- [ ] Add "Best Auto" mode + manual quality picker dropdown
-- [ ] Pass `format_selection` through UI → `create_download_task`
+### Phase 5.6: Format & Quality Selection (Completed)
+- [x] Extend `YtDlpFormat` to capture comprehensive format data (fps, codecs, HDR, audio channels, etc.)
+- [x] Extend `AddDownloadModal` to show professional quality presets, advanced format grid, audio track selector, and subtitle toggles.
+- [x] Pass `DownloadOptions` (JSON) through UI → `create_download_task`
+- [x] Update download worker to parse `DownloadOptions` and apply correct yt-dlp flags (audio-only, subtitles, container override).
 
 ### Phase 5.7: Sources & Playlists
 - [ ] Remove `--no-playlist` hardcode; add playlist expansion logic

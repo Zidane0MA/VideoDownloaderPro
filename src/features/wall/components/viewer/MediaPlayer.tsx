@@ -1,13 +1,31 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { Media } from '../../../../types/wall';
 import { Image as ImageIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CustomVideoPlayer } from './CustomVideoPlayer';
 
 export function MediaPlayer({ media }: { media: Media }) {
     const [hasError, setHasError] = useState(false);
+    const [subtitleUrl, setSubtitleUrl] = useState<string>();
+
     const src = convertFileSrc(media.file_path);
-    const isVideo = media.media_type === "VIDEO";
+    const isVideoOrAudio = media.media_type === "VIDEO" || media.media_type === "AUDIO";
+    const posterSrc = media.thumbnail_path ? convertFileSrc(media.thumbnail_path) : undefined;
+
+    useEffect(() => {
+        const checkSubtitle = async () => {
+            if (isVideoOrAudio && media.file_path) {
+                const lastDot = media.file_path.lastIndexOf('.');
+                if (lastDot !== -1) {
+                    const vttPath = media.file_path.substring(0, lastDot) + '.vtt';
+                    // Temporary workaround: bypass `fs.exists` to avoid permission errors
+                    // Just set the subtitle URL blindly, and let the `<track>` fail silently (404) if it doesn't exist.
+                    setSubtitleUrl(convertFileSrc(vttPath));
+                }
+            }
+        };
+        checkSubtitle();
+    }, [media.file_path, isVideoOrAudio]);
 
     if (hasError) {
         return (
@@ -21,9 +39,11 @@ export function MediaPlayer({ media }: { media: Media }) {
 
     return (
         <div className="w-full h-full flex items-center justify-center bg-black/95">
-            {isVideo ? (
+            {isVideoOrAudio ? (
                 <CustomVideoPlayer
                     src={src}
+                    poster={posterSrc}
+                    subtitleSrc={subtitleUrl}
                     onError={() => setHasError(true)}
                 />
             ) : (

@@ -31,8 +31,6 @@ pub async fn fetch_metadata(
     cmd.arg("--dump-single-json")
         .arg("--flat-playlist")
         .arg("--no-warnings")
-        .arg("-f")
-        .arg("bestvideo+bestaudio/best")
         .arg("--js-runtimes")
         .arg(deno_arg);
 

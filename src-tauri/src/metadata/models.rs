@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct YtDlpThumbnail {
@@ -11,16 +12,60 @@ pub struct YtDlpThumbnail {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct YtDlpFormat {
     pub format_id: String,
+    #[serde(default)]
     pub url: Option<String>,
+    #[serde(default)]
     pub ext: Option<String>,
+    #[serde(default)]
     pub width: Option<u32>,
+    #[serde(default)]
     pub height: Option<u32>,
-    pub tbr: Option<f64>, // Total bitrate
-    pub vcodec: Option<String>,
-    pub acodec: Option<String>,
+    #[serde(default)]
+    pub tbr: Option<f64>, // Total bitrate (kbps)
+    #[serde(default)]
+    pub vbr: Option<f64>, // Video bitrate (kbps)
+    #[serde(default)]
+    pub abr: Option<f64>, // Audio bitrate (kbps)
+    #[serde(default)]
+    pub asr: Option<u32>, // Audio sample rate (Hz), e.g. 44100, 48000
+    #[serde(default)]
+    pub fps: Option<f64>, // Frames per second
+    #[serde(default)]
+    pub vcodec: Option<String>, // e.g. "h264", "vp9", "av01"
+    #[serde(default)]
+    pub acodec: Option<String>, // e.g. "opus", "aac", "mp4a"
+    #[serde(default)]
+    pub audio_channels: Option<u32>, // e.g. 2 (stereo), 6 (5.1)
+    #[serde(default)]
+    pub container: Option<String>, // e.g. "mp4_dash", "webm_dash"
+    #[serde(default)]
+    pub protocol: Option<String>, // e.g. "https", "m3u8_native"
+    #[serde(default)]
+    pub dynamic_range: Option<String>, // e.g. "SDR", "HDR10", "HDR"
+    #[serde(default)]
+    pub resolution: Option<String>, // e.g. "1920x1080"
+    #[serde(default)]
+    pub format_note: Option<String>, // e.g. "1080p", "premium"
+    #[serde(default)]
+    pub language: Option<String>, // ISO 639 language code
+    #[serde(default)]
     pub filesize: Option<u64>,
+    #[serde(default)]
     pub filesize_approx: Option<u64>,
 }
+
+/// Single subtitle track entry from yt-dlp's `subtitles` / `automatic_captions` map.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct YtDlpSubtitle {
+    pub ext: String, // "vtt", "json3", "srv3"
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>, // Human-readable name e.g. "English"
+}
+
+/// Subtitle map: language_code → Vec<YtDlpSubtitle>
+pub type SubtitleMap = HashMap<String, Vec<YtDlpSubtitle>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct YtDlpVideo {
@@ -48,6 +93,14 @@ pub struct YtDlpVideo {
 
     pub thumbnails: Option<Vec<YtDlpThumbnail>>,
     pub formats: Option<Vec<YtDlpFormat>>,
+
+    // Subtitle tracks
+    #[serde(default)]
+    pub subtitles: Option<SubtitleMap>,
+    #[serde(default)]
+    pub automatic_captions: Option<SubtitleMap>,
+    #[serde(default)]
+    pub requested_subtitles: Option<SubtitleMap>,
 
     // Playlist info (if it's an item in a playlist)
     pub playlist_index: Option<u32>,

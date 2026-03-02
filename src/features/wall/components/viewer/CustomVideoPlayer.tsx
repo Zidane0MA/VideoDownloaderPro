@@ -1,13 +1,15 @@
 import { useState, useRef, useEffect, MouseEvent as ReactMouseEvent } from 'react';
 import { useSettingsStore } from '../../../settings/SettingsStore';
-import { Play, Pause, Volume2, VolumeX, Maximize, FastForward } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Maximize, FastForward, Subtitles } from 'lucide-react';
 
 interface CustomVideoPlayerProps {
     src: string;
+    poster?: string;
+    subtitleSrc?: string;
     onError: () => void;
 }
 
-export function CustomVideoPlayer({ src, onError }: CustomVideoPlayerProps) {
+export function CustomVideoPlayer({ src, poster, subtitleSrc, onError }: CustomVideoPlayerProps) {
     const { settings, updateSetting } = useSettingsStore();
     const savedVolume = parseFloat(settings.player_volume) || 1;
 
@@ -19,6 +21,7 @@ export function CustomVideoPlayer({ src, onError }: CustomVideoPlayerProps) {
     const [duration, setDuration] = useState(0);
     const [isHoldingToSpeed, setIsHoldingToSpeed] = useState(false);
     const [showControls, setShowControls] = useState(true);
+    const [subtitlesEnabled, setSubtitlesEnabled] = useState(true);
 
     const holdTimeoutRef = useRef<number | null>(null);
     const controlsTimeoutRef = useRef<number | null>(null);
@@ -183,6 +186,11 @@ export function CustomVideoPlayer({ src, onError }: CustomVideoPlayerProps) {
         };
     }, [isPlaying]);
 
+    const toggleSubtitles = (e: ReactMouseEvent) => {
+        e.stopPropagation();
+        setSubtitlesEnabled(prev => !prev);
+    };
+
     return (
         <div
             className="relative w-full h-full flex items-center justify-center bg-black group"
@@ -192,13 +200,25 @@ export function CustomVideoPlayer({ src, onError }: CustomVideoPlayerProps) {
             <video
                 ref={videoRef}
                 src={src}
+                poster={poster}
                 className="max-w-full max-h-full object-contain"
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={() => setIsPlaying(false)}
                 onError={onError}
                 loop
-            />
+                playsInline
+            >
+                {subtitleSrc && (
+                    <track
+                        kind="subtitles"
+                        src={subtitleSrc}
+                        srcLang="en" // generic or unknown lang
+                        label="Subtitles"
+                        default={subtitlesEnabled}
+                    />
+                )}
+            </video>
 
             {/* Interaction Overlay (handles play/pause & hold-to-speedup for entire area) */}
             <div
@@ -317,12 +337,23 @@ export function CustomVideoPlayer({ src, onError }: CustomVideoPlayerProps) {
                             </div>
                         </div>
 
-                        <button
-                            onClick={toggleFullScreen}
-                            className="text-white hover:text-brand-400 transition-colors"
-                        >
-                            <Maximize size={20} />
-                        </button>
+                        <div className="flex items-center gap-4">
+                            {subtitleSrc && (
+                                <button
+                                    onClick={toggleSubtitles}
+                                    className={`transition-colors ${subtitlesEnabled ? 'text-brand-400' : 'text-white hover:text-brand-400'}`}
+                                    title="Toggle Subtitles"
+                                >
+                                    <Subtitles size={20} />
+                                </button>
+                            )}
+                            <button
+                                onClick={toggleFullScreen}
+                                className="text-white hover:text-brand-400 transition-colors"
+                            >
+                                <Maximize size={20} />
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

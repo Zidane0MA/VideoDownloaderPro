@@ -388,9 +388,7 @@ impl DownloadQueue {
                                         );
 
                                         // 3. Process thumbnails (best-effort):
-                                        //    - Find yt-dlp's platform thumbnail (--write-thumbnail)
-                                        //    - Resize to 300px for Wall
-                                        //    - Fallback: extract frame from video
+                                        //    - Extract frame from video and scale to 300px
                                         if let Ok(ffmpeg) = crate::sidecar::get_binary_path(
                                             &app,
                                             crate::sidecar::types::SidecarBinary::Ffmpeg,

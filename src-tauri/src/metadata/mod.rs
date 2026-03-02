@@ -1,4 +1,5 @@
 pub mod fetcher;
+pub mod format_processor;
 pub mod models;
 pub mod store;
 

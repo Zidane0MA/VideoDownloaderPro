@@ -1,6 +1,7 @@
 use super::parser::Parser;
 use crate::auth::cookie_manager::CookieManager;
 use crate::entity::download_task;
+use crate::metadata::format_processor::DownloadOptions;
 use crate::metadata::{fetcher, store};
 use crate::sidecar::{get_binary_path, types::SidecarBinary};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
@@ -287,10 +288,6 @@ impl DownloadWorker {
             .arg(&output_dir)
             .arg("--output")
             .arg("%(title)s.%(ext)s")
-            // Download the original platform thumbnail and convert to JPG
-            .arg("--write-thumbnail")
-            .arg("--convert-thumbnails")
-            .arg("jpg")
             // Apply rate limit if configured
             ;
 
@@ -307,9 +304,46 @@ impl DownloadWorker {
             cmd.arg("--cookies").arg(cookie_path);
         }
 
-        // Apply format selection if specified
-        if let Some(ref fmt) = format_selection {
-            cmd.arg("-f").arg(fmt);
+        // Apply format selection — try to parse as JSON DownloadOptions first,
+        // fall back to plain string for backward compatibility.
+        if let Some(ref fmt_str) = format_selection {
+            if let Ok(opts) = serde_json::from_str::<DownloadOptions>(fmt_str) {
+                // --- Structured DownloadOptions ---
+
+                if opts.audio_only {
+                    // Audio-only extraction
+                    cmd.arg("-f").arg("bestaudio");
+                    cmd.arg("--extract-audio");
+                    if let Some(ref audio_fmt) = opts.audio_extract_format {
+                        cmd.arg("--audio-format").arg(audio_fmt);
+                    }
+                } else {
+                    // Video format selection
+                    let video_part = opts.format_id.as_deref().unwrap_or("bestvideo");
+                    let audio_part = opts.audio_format_id.as_deref().unwrap_or("bestaudio");
+                    let format_string = format!("{}+{}/best", video_part, audio_part);
+                    cmd.arg("-f").arg(&format_string);
+                }
+
+                // Subtitle options
+                if !opts.subtitle_langs.is_empty() {
+                    cmd.arg("--write-subs");
+                    cmd.arg("--sub-langs").arg(opts.subtitle_langs.join(","));
+                    cmd.arg("--sub-format").arg("vtt");
+
+                    if opts.embed_subs {
+                        cmd.arg("--embed-subs");
+                    }
+                }
+
+                // Container override
+                if let Some(ref container) = opts.container {
+                    cmd.arg("--merge-output-format").arg(container);
+                }
+            } else {
+                // --- Plain string fallback (legacy) ---
+                cmd.arg("-f").arg(fmt_str);
+            }
         }
 
         cmd.arg(&url);
