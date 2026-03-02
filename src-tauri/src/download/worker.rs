@@ -142,6 +142,7 @@ impl DownloadWorker {
         url: String,
         output_dir: PathBuf,
         format_selection: Option<String>,
+        rate_limit: Option<String>,
         cancel_token: CancellationToken,
         db: DatabaseConnection,
     ) -> Result<DownloadResult, DownloadError> {
@@ -290,11 +291,16 @@ impl DownloadWorker {
             .arg("--write-thumbnail")
             .arg("--convert-thumbnails")
             .arg("jpg")
-            // Rate limit for debugging/stability (5MB/s)
-            .arg("--limit-rate")
-            .arg("5M")
-            .arg("--js-runtimes")
-            .arg(deno_arg);
+            // Apply rate limit if configured
+            ;
+
+        if let Some(limit) = &rate_limit {
+            if !limit.trim().is_empty() {
+                cmd.arg("--limit-rate").arg(limit.trim());
+            }
+        }
+
+        cmd.arg("--js-runtimes").arg(deno_arg);
 
         // Inject cookies if available
         if let Some(ref cookie_path) = temp_cookie_path {

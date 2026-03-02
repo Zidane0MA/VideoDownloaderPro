@@ -32,6 +32,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
                 settings: { ...defaultSettings, ...dbSettings },
                 isLoading: false
             });
+
+            // Sync theme to localStorage on initial load just in case DB changed
+            if (dbSettings.theme) {
+                localStorage.setItem('vdp_theme', dbSettings.theme);
+            }
+
         } catch (err: any) {
             set({ error: err.toString(), isLoading: false });
         }
@@ -46,6 +52,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
                     [key]: value,
                 },
             }));
+
+            // Sync theme updates to localStorage
+            if (key === 'theme') {
+                localStorage.setItem('vdp_theme', value);
+            }
         } catch (err: any) {
             set({ error: err.toString() });
             throw err;

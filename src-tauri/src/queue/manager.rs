@@ -286,6 +286,18 @@ impl DownloadQueue {
                     }
                 };
 
+                // Read rate_limit from DB
+                let rate_limit = {
+                    use crate::entity::setting::Entity as Setting;
+                    let db_ref = &app.state::<AppState>().db;
+                    Setting::find_by_id("rate_limit")
+                        .one(db_ref)
+                        .await
+                        .unwrap_or_default()
+                        .map(|s| s.value)
+                        .filter(|v| !v.is_empty())
+                };
+
                 // Ensure dir exists
                 if !download_dir.exists() {
                     let _ = std::fs::create_dir_all(&download_dir);
@@ -297,6 +309,7 @@ impl DownloadQueue {
                         url,
                         download_dir.clone(),
                         format_selection,
+                        rate_limit,
                         task_token,
                         db.clone(),
                     )

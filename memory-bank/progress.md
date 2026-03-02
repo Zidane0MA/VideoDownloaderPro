@@ -31,12 +31,15 @@
     - [x] **Validation**: Fix False Positive Auth (Empty/Guest Cookies)
     - [x] **Feature**: Display Username & Avatar in Account Card (Extraction for IG/TikTok/X)
 
-### Phase 4: Frontend - Download Manager (Completed)
+### Phase 4: Frontend - Download Manager (Partial - *Note: Metadata Preview and Quality Selection deferred*)
 - [x] Active Downloads UI
 - [x] URL Input & Preview
 - [x] Settings Page (Path, Concurrency, Language, Trash Config)
+- [ ] Disk Space Dashboard: Docs state Phase 4 includes a dashboard in Settings. Status: Currently a non-functional stub.
+- [ ] Metadata Preview: Docs state Phase 4 includes showing a preview after pasting a URL. Status: Not implemented.
+- [ ] Quality Selector: Docs state Phase 4 includes a format/quality dropdown. Status: Plumbed in backend but missing UI (deferred to Phase 5.6).
 
-### Phase 5: Frontend - Gallery (Wall) (Completed)
+### Phase 5: Frontend - Gallery (Wall) (Partial - *Note: Search & Filter deferred*)
 - [x] Virtualized Grid (via @virtuoso.dev/masonry)
 - [x] Post Card Component
 - [x] Media Viewer
@@ -44,6 +47,13 @@
     - [x] Custom Video Player: auto-hiding controls, seekbar, volume, fullscreen
     - [x] Hold-to-speedup (2x) with top badge indicator
     - [x] Inter-post navigation (keyboard + hover-reveal edge arrows)
+- [ ] Creator Avatars: Docs describe the Gallery cards with creator avatars. Status: Entity has the field, but it is never populated/fetched.
+- [ ] Search & Filter: Docs claim the Wall supports filtering by title, creator, platform. Status: Logic is missing.
+- [ ] Metadata Dump: Docs state Phase 5 includes storing raw yt-dlp metadata. Status: Missing.
+- [ ] Subfolder Organization: Docs specify /downloads/{Platform}/{Creator or Source}/. Status: Code downloads all files into a flat directory.
+- [ ] Filename Template: Docs describe a customizable filename template. Status: Missing.
+- [ ] Trash Auto Clean: Docs claim the Trash view supports auto-cleaning. Status: Missing.
+- [ ] Delete Files on Remove: Docs claim the Trash view supports auto-cleaning. Status: Missing.
 
 ### Phase 5.5: Settings Integration & Engine Polish
 - [x] Wire `download_path` DB setting to download worker (currently hardcoded to system default)
@@ -69,12 +79,22 @@
 - [ ] Implement `trash_auto_clean` background job (periodic at startup)
 - [ ] Add `delete_files_on_remove` toggle in Settings
 
+- [ ] Phase 5.x: Infrastructure Gaps (Identified in Documentation Audit)
+    - [ ] `media.checksum` (SHA-256) for duplicate detection
+    - [ ] `posts.raw_json` metadata dump storage
+    - [ ] Structured Error Codes (`NET_001`, etc.)
+    - [ ] Pre-download Health Checks (disk, net, path)
+    - [ ] Proactive 24h Cookie Health Checks
+    - [ ] Per-task logging (`task-{uuid}.log`)
+    - [ ] Subfolder organization (`/downloads/Platform/Creator/`)
+    - [ ] Filename template customization
+
 ### Phase 6: Polish & Packaging
 - [ ] Dark/Light Mode (CSS variables, persistent theme)
 - [ ] Global Error Handling UI
 - [ ] Installer Build (MSI, AppImage)
 
-## Known Issues / Blockers
 *   **Browser Encryption**: L2 (Browser Import) is limited on Chrome/Edge due to App-Bound Encryption.
-*   **Settings Disconnected**: `download_path`, `concurrent_downloads`, `trash_auto_clean_days` are stored in DB but NOT read by the backend (see audit report).
+*   **Documentation Discrepancies**: Many features in Phase 4/5 (Metadata Preview, Quality Selector, Search) and the Infrastructure (Health checks, Checksums, Hierarchy) are documented but missing from code.
+*   **IPC Contract Drift**: The documented API in `07_ipc_api_contract.md` significantly exceeds the implemented commands and events.
 *   **Source Entity Unused**: `sources` table exists with full schema but zero logic references it.

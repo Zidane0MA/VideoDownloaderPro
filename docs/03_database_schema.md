@@ -130,8 +130,6 @@ Key-value store for user preferences.
 | `trash_auto_clean_days` | `30` | Days before auto-deleting trash |
 | `delete_files_on_remove` | `false` | true = permanent delete, false = move to trash |
 | `disk_space_warning_gb` | `5` | Alert threshold in GB |
-| `ytdlp_auto_update` | `true` | Auto-update yt-dlp |
-| `ytdlp_update_interval_hours` | `24` | Hours between update checks |
 | `language` | `en` | UI language (en, es) |
 | `sleep_interval` | `2` | Seconds between downloads |
 | `sleep_requests` | `1` | Seconds between metadata requests |

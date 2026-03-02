@@ -1,9 +1,10 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Download, Images, Settings as SettingsIcon, Zap, Plus } from "lucide-react";
 import { AddDownloadModal } from "./components/AddDownloadModal";
 import { DownloadsList } from "./components/DownloadsList";
 import { Settings } from "./features/settings/Settings";
+import { useSettingsStore } from "./features/settings/SettingsStore";
 import { Wall } from "./features/wall/Wall";
 import { useDownloadCompletionSync } from "./features/wall/api/useDownloadCompletionSync";
 
@@ -26,6 +27,38 @@ function App() {
     setCurrentView(view);
     if (view === 'wall') setNewWallItems(0); // Clear badge on enter
   };
+
+  const { settings, fetchSettings } = useSettingsStore();
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
+
+  useEffect(() => {
+    // Get theme from SettingsStore or fallback to localStorage, then default to 'dark'
+    const theme = settings.theme || localStorage.getItem('vdp_theme') || 'dark';
+    const root = window.document.documentElement;
+
+    const applyTheme = (isDark: boolean) => {
+      if (isDark) {
+        root.classList.add('dark');
+      } else {
+        root.classList.remove('dark');
+      }
+    };
+
+    if (theme === 'system') {
+      const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      applyTheme(systemPrefersDark);
+
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const listener = (e: MediaQueryListEvent) => applyTheme(e.matches);
+      mediaQuery.addEventListener('change', listener);
+      return () => mediaQuery.removeEventListener('change', listener);
+    } else {
+      applyTheme(theme === 'dark');
+    }
+  }, [settings.theme]);
 
   const toggleLanguage = () => {
     const newLang = i18n.language === "en" ? "es" : "en";

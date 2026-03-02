@@ -364,8 +364,6 @@ impl MigrationTrait for Migration {
             ("trash_auto_clean_days", "30"),
             ("delete_files_on_remove", "false"),
             ("disk_space_warning_gb", "5"),
-            ("ytdlp_auto_update", "true"),
-            ("ytdlp_update_interval_hours", "24"),
             ("language", "en"),
             ("sleep_interval", "2"),
             ("sleep_requests", "1"),

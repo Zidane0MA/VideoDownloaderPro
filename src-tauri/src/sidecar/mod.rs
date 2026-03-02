@@ -165,14 +165,16 @@ pub async fn update_yt_dlp(handle: &AppHandle) -> Result<String, SidecarError> {
     tracing::info!("Starting yt-dlp self-update…");
     let binary_path = get_binary_path(handle, SidecarBinary::YtDlp)?;
 
-    let output = Command::new(&binary_path)
-        .arg("-U")
-        .output()
-        .await
-        .map_err(|e| SidecarError::ExecutionFailed {
-            binary: "yt-dlp".to_string(),
-            reason: e.to_string(),
-        })?;
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        Command::new(&binary_path).arg("-U").output(),
+    )
+    .await
+    .map_err(|_| SidecarError::UpdateFailed("Update timed out after 60 seconds".into()))?
+    .map_err(|e| SidecarError::ExecutionFailed {
+        binary: "yt-dlp".to_string(),
+        reason: e.to_string(),
+    })?;
 
     // Note: yt-dlp exit code might vary on update?
     // Usually 0 is success.

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from './SettingsStore';
 import { Folder, Sliders, Languages, HardDrive, Trash2, Moon, Sun, Monitor, Info, Users, RefreshCw, Plus } from 'lucide-react';
 import { AccountCard } from '../../components/settings/AccountCard';
@@ -15,9 +16,12 @@ export const Settings = () => {
 
     const { data: authStatus } = useAuthStatus();
     const verifyAll = useVerifyAllSessions();
-    const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('dark');
+    const theme = settings.theme || 'dark';
     const [showPicker, setShowPicker] = useState(false);
     const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null);
+    const [isUpdatingYtDlp, setIsUpdatingYtDlp] = useState(false);
+    const [updateMessage, setUpdateMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+    const [ytdlpVersion, setYtdlpVersion] = useState<string | null>(null);
 
     const activeSessions = authStatus?.filter(s => s.status !== 'NONE') || [];
     const connectedPlatforms = PLATFORMS.filter(p => activeSessions.some(s => s.platform_id === p.id));
@@ -25,6 +29,9 @@ export const Settings = () => {
 
     useEffect(() => {
         fetchSettings();
+        invoke<string>('get_ytdlp_version')
+            .then(setYtdlpVersion)
+            .catch(() => setYtdlpVersion(null));
     }, [fetchSettings]);
 
     const handlePathChange = async () => {
@@ -46,6 +53,36 @@ export const Settings = () => {
         const lang = e.target.value;
         await updateSetting('language', lang);
         i18n.changeLanguage(lang);
+    };
+
+    const handleUpdateYtDlp = async () => {
+        try {
+            setIsUpdatingYtDlp(true);
+            setUpdateMessage(null);
+
+            // Check for active downloads — yt-dlp binary can't be replaced while in use
+            const queue = await invoke<{ is_paused: boolean; tasks: { status: string }[] }>('get_queue_status');
+            const activeStatuses = ['DOWNLOADING', 'PROCESSING', 'FETCHING_META'];
+            const hasActive = queue.tasks.some(t => activeStatuses.includes(t.status));
+            if (hasActive) {
+                setUpdateMessage({ text: 'Cannot update while downloads are active. Wait for them to finish.', type: 'error' });
+                return;
+            }
+
+            const oldVersion = ytdlpVersion;
+            const newVersion = await invoke<string>('update_ytdlp');
+            setYtdlpVersion(newVersion);
+
+            if (oldVersion && oldVersion === newVersion) {
+                setUpdateMessage({ text: `Already up to date (v${newVersion})`, type: 'success' });
+            } else {
+                setUpdateMessage({ text: oldVersion ? `Updated from v${oldVersion} → v${newVersion}` : `Updated to v${newVersion}`, type: 'success' });
+            }
+        } catch (error) {
+            setUpdateMessage({ text: `Update failed: ${error}`, type: 'error' });
+        } finally {
+            setIsUpdatingYtDlp(false);
+        }
     };
 
     if (isLoading) {
@@ -82,7 +119,7 @@ export const Settings = () => {
                                 </div>
                                 <button
                                     onClick={handlePathChange}
-                                    className="px-4 py-2.5 bg-surface-700 hover:bg-surface-600 text-white text-sm font-medium rounded-xl transition-colors whitespace-nowrap"
+                                    className="px-4 py-2.5 bg-surface-900 hover:bg-surface-700 border border-surface-700 text-surface-200 hover:text-surface-100 text-sm font-medium rounded-xl transition-colors whitespace-nowrap"
                                 >
                                     Change
                                 </button>
@@ -104,6 +141,24 @@ export const Settings = () => {
                                 className="w-full h-2 bg-surface-900 rounded-lg appearance-none cursor-pointer accent-brand-500"
                             />
                             <p className="text-xs text-surface-400">Number of active downloads at the same time.</p>
+                        </div>
+
+                        {/* Rate Limit */}
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-surface-200">Rate Limit</label>
+                            <select
+                                value={settings.rate_limit || ""}
+                                onChange={(e) => updateSetting('rate_limit', e.target.value)}
+                                className="w-full px-4 py-2.5 bg-surface-900 border border-surface-700 rounded-xl text-sm focus:outline-none focus:border-brand-500"
+                            >
+                                <option value="">Unlimited</option>
+                                <option value="1M">1 MB/s</option>
+                                <option value="5M">5 MB/s</option>
+                                <option value="10M">10 MB/s</option>
+                                <option value="25M">25 MB/s</option>
+                                <option value="50M">50 MB/s</option>
+                            </select>
+                            <p className="text-xs text-surface-400">Maximum download speed per active task.</p>
                         </div>
 
                         {/* Language */}
@@ -157,18 +212,29 @@ export const Settings = () => {
                             <div className="flex items-center justify-between">
                                 <div>
                                     <div>
-                                        <h4 className="text-sm font-medium text-surface-200 text-left">yt-dlp Engine</h4>
+                                        <h4 className="text-sm font-medium text-surface-200 text-left">
+                                            yt-dlp Engine
+                                            {ytdlpVersion && <span className="ml-2 text-xs font-mono text-brand-400">v{ytdlpVersion}</span>}
+                                        </h4>
                                         <p className="text-xs text-surface-400 text-left mt-1">
                                             Manage yt-dlp binary updates.
                                         </p>
                                     </div>
                                 </div>
                                 <button
-                                    className="px-4 py-2 bg-surface-900 hover:bg-surface-700 border border-surface-700 rounded-xl text-sm font-medium transition-colors"
+                                    onClick={handleUpdateYtDlp}
+                                    disabled={isUpdatingYtDlp}
+                                    className="px-4 py-2 bg-surface-900 hover:bg-surface-700 border border-surface-700 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                                 >
-                                    Check for Updates
+                                    {isUpdatingYtDlp && <RefreshCw size={14} className="animate-spin" />}
+                                    {isUpdatingYtDlp ? 'Updating...' : 'Check for Updates'}
                                 </button>
                             </div>
+                            {updateMessage && (
+                                <div className={`mt-3 p-3 rounded-xl text-sm ${updateMessage.type === 'success' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                                    {updateMessage.text}
+                                </div>
+                            )}
                         </div>
 
                     </div>
@@ -258,20 +324,20 @@ export const Settings = () => {
                             </div>
                             <div className="flex bg-surface-900 rounded-lg p-1 border border-surface-700/50">
                                 <button
-                                    onClick={() => setTheme('dark')}
-                                    className={`p-2 rounded-md transition-all ${theme === 'dark' ? 'bg-surface-700 text-white shadow-sm' : 'text-surface-400 hover:text-surface-200'}`}
+                                    onClick={() => updateSetting('theme', 'dark')}
+                                    className={`p-2 rounded-md transition-all ${theme === 'dark' ? 'bg-surface-700 text-surface-100 shadow-sm' : 'text-surface-400 hover:text-surface-200'}`}
                                 >
                                     <Moon size={18} />
                                 </button>
                                 <button
-                                    onClick={() => setTheme('light')}
-                                    className={`p-2 rounded-md transition-all ${theme === 'light' ? 'bg-surface-700 text-white shadow-sm' : 'text-surface-400 hover:text-surface-200'}`}
+                                    onClick={() => updateSetting('theme', 'light')}
+                                    className={`p-2 rounded-md transition-all ${theme === 'light' ? 'bg-surface-700 text-surface-100 shadow-sm' : 'text-surface-400 hover:text-surface-200'}`}
                                 >
                                     <Sun size={18} />
                                 </button>
                                 <button
-                                    onClick={() => setTheme('system')}
-                                    className={`p-2 rounded-md transition-all ${theme === 'system' ? 'bg-surface-700 text-white shadow-sm' : 'text-surface-400 hover:text-surface-200'}`}
+                                    onClick={() => updateSetting('theme', 'system')}
+                                    className={`p-2 rounded-md transition-all ${theme === 'system' ? 'bg-surface-700 text-surface-100 shadow-sm' : 'text-surface-400 hover:text-surface-200'}`}
                                 >
                                     <Monitor size={18} />
                                 </button>
