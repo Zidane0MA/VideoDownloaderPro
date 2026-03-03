@@ -1,16 +1,19 @@
-import { ExternalLink, FolderOpen, Trash2, Calendar, FileType, HardDrive } from 'lucide-react';
+import { ExternalLink, FolderOpen, Trash2, Calendar, FileType, HardDrive, RotateCcw } from 'lucide-react';
 import type { Post, Media } from '../../../../types/wall';
 import { revealInExplorer, deletePost } from '../../api/viewer';
+import { invoke } from '@tauri-apps/api/core';
 import { useState } from 'react';
 
 interface MediaSidebarProps {
     post: Post;
     media: Media;
     onClose: () => void;
+    isTrashMode?: boolean;
 }
 
-export function MediaSidebar({ post, media, onClose }: MediaSidebarProps) {
+export function MediaSidebar({ post, media, onClose, isTrashMode }: MediaSidebarProps) {
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isRestoring, setIsRestoring] = useState(false);
 
     const handleReveal = async () => {
         try {
@@ -25,11 +28,22 @@ export function MediaSidebar({ post, media, onClose }: MediaSidebarProps) {
 
         setIsDeleting(true);
         try {
-            await deletePost(post.id);
+            await deletePost(post.id); // This already does a soft-delete if on wall, or could be replaced if we have a hard-delete per item in the future. Wait, in Trash mode, we don't have a single-item hard delete. Actually wall.rs delete_post does soft-delete. Let's just do that for now.
             onClose(); // Close viewer after deletion
         } catch (error) {
             console.error('Failed to delete post:', error);
             setIsDeleting(false);
+        }
+    };
+
+    const handleRestore = async () => {
+        setIsRestoring(true);
+        try {
+            await invoke('restore_post', { postId: post.id });
+            onClose(); // Close viewer after restoring
+        } catch (error) {
+            console.error('Failed to restore post:', error);
+            setIsRestoring(false);
         }
     };
 
@@ -115,14 +129,27 @@ export function MediaSidebar({ post, media, onClose }: MediaSidebarProps) {
                     Show in Explorer
                 </button>
 
-                <button
-                    onClick={handleDelete}
-                    disabled={isDeleting}
-                    className="flex items-center justify-center gap-2 w-full px-4 py-2 border border-red-500/20 hover:bg-red-500/10 text-red-500 rounded-lg transition-colors font-medium text-sm disabled:opacity-50"
-                >
-                    <Trash2 size={16} />
-                    {isDeleting ? 'Deleting...' : 'Delete File'}
-                </button>
+                {isTrashMode ? (
+                    <>
+                        <button
+                            onClick={handleRestore}
+                            disabled={isRestoring || isDeleting}
+                            className="flex items-center justify-center gap-2 w-full px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition-colors font-medium text-sm disabled:opacity-50"
+                        >
+                            <RotateCcw size={16} />
+                            {isRestoring ? 'Restoring...' : 'Restore'}
+                        </button>
+                    </>
+                ) : (
+                    <button
+                        onClick={handleDelete}
+                        disabled={isDeleting}
+                        className="flex items-center justify-center gap-2 w-full px-4 py-2 border border-red-500/20 hover:bg-red-500/10 text-red-500 rounded-lg transition-colors font-medium text-sm disabled:opacity-50"
+                    >
+                        <Trash2 size={16} />
+                        {isDeleting ? 'Deleting...' : 'Delete File'}
+                    </button>
+                )}
             </div>
         </div>
     );

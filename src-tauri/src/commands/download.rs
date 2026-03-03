@@ -320,17 +320,7 @@ pub async fn fetch_metadata_command(
 ) -> Result<ProcessedMetadata, String> {
     // Generate temp cookie path if applicable (e.g. for age-gated/member videos)
     let mut temp_cookie_path = None;
-    let platform_id = if url.contains("youtube.com") || url.contains("youtu.be") {
-        Some("youtube")
-    } else if url.contains("tiktok.com") {
-        Some("tiktok")
-    } else if url.contains("instagram.com") {
-        Some("instagram")
-    } else if url.contains("x.com") || url.contains("twitter.com") {
-        Some("x")
-    } else {
-        None
-    };
+    let platform_id = crate::platform::detect_platform(&url);
 
     if let Some(pid) = platform_id {
         if let Ok(Some(path)) = cookie_manager.create_temp_cookie_file(pid).await {
@@ -367,6 +357,7 @@ pub async fn fetch_metadata_command(
                 video_qualities: vec![],
                 audio_tracks: vec![],
                 subtitle_tracks: vec![],
+                is_playlist: true,
             })
         }
     }

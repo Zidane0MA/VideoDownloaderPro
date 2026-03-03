@@ -1,10 +1,12 @@
 pub mod auth;
+pub mod background;
 mod commands;
 pub mod db;
 pub mod download;
 mod entity;
 pub mod metadata;
 pub mod migration;
+pub mod platform;
 pub mod queue;
 pub mod sidecar;
 
@@ -72,6 +74,12 @@ pub fn run() {
                     .expect("Failed to initialize database");
 
             tracing::info!("Database initialized successfully");
+
+            // Start Trash background cleaner
+            background::trash_cleaner::start_trash_cleaner(
+                app.handle(),
+                std::sync::Arc::new(db.clone()),
+            );
 
             // Initialize sidecars (copy from bundle to app_data if needed)
             let handle = app.handle().clone();
@@ -196,6 +204,13 @@ pub fn run() {
             commands::wall::get_posts,
             commands::wall::delete_post,
             commands::wall::reveal_in_explorer,
+            commands::wall::restore_post,
+            commands::wall::get_trash_posts,
+            commands::wall::empty_trash_command,
+            commands::sources::get_sources_command,
+            commands::sources::delete_source_command,
+            commands::sources::add_source_command,
+            commands::sources::update_source_command,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

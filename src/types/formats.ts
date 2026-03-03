@@ -14,6 +14,7 @@ export interface ProcessedMetadata {
     video_qualities: VideoQuality[];
     audio_tracks: AudioTrack[];
     subtitle_tracks: SubtitleTrack[];
+    is_playlist: boolean;
 }
 
 export interface VideoQuality {

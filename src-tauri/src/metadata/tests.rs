@@ -67,7 +67,7 @@ mod tests {
         let video1 = YtDlpVideo {
             id: "v1".to_string(),
             title: "Video 1".to_string(),
-            webpage_url: Some("url1".to_string()),
+            webpage_url: Some("https://youtube.com/watch?v=v1".to_string()),
             uploader_id: Some("c1".to_string()),
             uploader: Some("Channel 1".to_string()),
             description: None,
@@ -96,7 +96,7 @@ mod tests {
             description: Some("Desc".to_string()),
             uploader: Some("Playlist Creator".to_string()),
             uploader_id: Some("pc1".to_string()),
-            webpage_url: Some("http://playlist".to_string()),
+            webpage_url: Some("https://youtube.com/playlist?list=playlist1".to_string()),
             entries: Some(vec![YtDlpOutput::Video(video1)]),
         };
 

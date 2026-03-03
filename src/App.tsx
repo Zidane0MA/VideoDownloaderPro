@@ -1,14 +1,16 @@
 import { useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Images, Settings as SettingsIcon, Zap, Plus } from "lucide-react";
+import { Download, Images, Settings as SettingsIcon, Zap, Plus, Trash2 as TrashIcon } from "lucide-react";
 import { AddDownloadModal } from "./components/AddDownloadModal";
 import { DownloadsList } from "./components/DownloadsList";
 import { Settings } from "./features/settings/Settings";
 import { useSettingsStore } from "./features/settings/SettingsStore";
 import { Wall } from "./features/wall/Wall";
+import { Sources } from "./features/sources/Sources";
+import { Trash } from "./features/trash/Trash";
 import { useDownloadCompletionSync } from "./features/wall/api/useDownloadCompletionSync";
 
-type View = 'downloads' | 'wall' | 'settings';
+type View = 'downloads' | 'wall' | 'sources' | 'trash' | 'settings';
 
 function App() {
   const { t, i18n } = useTranslation();
@@ -101,6 +103,8 @@ function App() {
           {[
             { id: 'downloads', icon: Download, label: t("nav.downloads") },
             { id: 'wall', icon: Images, label: t("nav.wall") },
+            { id: 'sources', icon: Plus, label: "Sources" }, // TODO: i18n
+            { id: 'trash', icon: TrashIcon, label: "Trash" }, // TODO: i18n
             { id: 'settings', icon: SettingsIcon, label: t("nav.settings") },
           ].map((item) => (
             <button
@@ -152,6 +156,14 @@ function App() {
 
         {currentView === 'wall' && (
           <Wall />
+        )}
+
+        {currentView === 'sources' && (
+          <Sources />
+        )}
+
+        {currentView === 'trash' && (
+          <Trash />
         )}
 
         {currentView === 'settings' && (

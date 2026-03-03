@@ -38,11 +38,18 @@ async fn save_playlist(db: &DatabaseConnection, p: YtDlpPlaylist) -> Result<Stri
     // 1. Upsert Source (Playlist)
     let source_id = p.id.clone();
 
+    let inferred_platform = p
+        .webpage_url
+        .as_deref()
+        .and_then(crate::platform::detect_platform)
+        .unwrap_or("unknown")
+        .to_string();
+
     // Check if creator exists for the playlist uploader
     let creator_id = if let (Some(id), Some(name)) = (&p.uploader_id, &p.uploader) {
         let active_creator = creator::ActiveModel {
             id: Set(id.clone()),
-            platform_id: Set("youtube".to_string()),
+            platform_id: Set(inferred_platform.clone()),
             name: Set(name.clone()),
             url: Set(p.webpage_url.clone().unwrap_or_default()),
             ..Default::default()
@@ -63,7 +70,7 @@ async fn save_playlist(db: &DatabaseConnection, p: YtDlpPlaylist) -> Result<Stri
 
     let active_source = source::ActiveModel {
         id: Set(source_id.clone()),
-        platform_id: Set("youtube".to_string()),
+        platform_id: Set(inferred_platform.clone()),
         creator_id: Set(creator_id),
         source_type: Set("PLAYLIST".to_string()),
         name: Set(p.title),
@@ -109,9 +116,17 @@ async fn upsert_creator(db: &impl ConnectionTrait, v: &YtDlpVideo) -> Result<Str
     let name = v.uploader.clone().unwrap_or_else(|| "Unknown".to_string());
     let url = v.uploader_url.clone().unwrap_or_default();
 
+    let platform = v
+        .webpage_url
+        .as_deref()
+        .or(v.uploader_url.as_deref())
+        .and_then(crate::platform::detect_platform)
+        .unwrap_or("unknown")
+        .to_string();
+
     let active = creator::ActiveModel {
         id: Set(id.clone()),
-        platform_id: Set("youtube".to_string()), // TODO: Infer from URL or yt-dlp extractor
+        platform_id: Set(platform),
         name: Set(name),
         url: Set(url),
         ..Default::default()

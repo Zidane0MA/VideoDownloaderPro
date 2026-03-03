@@ -58,9 +58,9 @@
 ### Phase 5.5: Settings Integration & Engine Polish
 - [x] Wire `download_path` DB setting to download worker (currently hardcoded to system default)
 - [x] Wire `concurrent_downloads` DB setting to Queue Semaphore (now supports live-reload via watch channel)
-- [ ] Make `rate_limit` configurable (currently hardcoded `--limit-rate 5M`)
-- [ ] Expose `update_yt_dlp()` as IPC command; wire "Check for Updates" button
-- [ ] Persist theme preference to DB; wire CSS class/variable swap
+- [x] Make `rate_limit` configurable (currently hardcoded `--limit-rate 5M`)
+- [x] Expose `update_yt_dlp()` as IPC command; wire "Check for Updates" button
+- [x] Persist theme preference to DB; wire CSS class/variable swap
 
 ### Phase 5.6: Format & Quality Selection (Completed)
 - [x] Extend `YtDlpFormat` to capture comprehensive format data (fps, codecs, HDR, audio channels, etc.)

@@ -22,6 +22,7 @@ pub struct ProcessedMetadata {
     pub video_qualities: Vec<VideoQuality>,
     pub audio_tracks: Vec<AudioTrack>,
     pub subtitle_tracks: Vec<SubtitleTrack>,
+    pub is_playlist: bool,
 }
 
 /// A deduplicated video quality option.
@@ -118,6 +119,7 @@ pub fn process_metadata(video: &YtDlpVideo) -> ProcessedMetadata {
         video_qualities,
         audio_tracks,
         subtitle_tracks,
+        is_playlist: false,
     }
 }
 

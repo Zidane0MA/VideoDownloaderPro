@@ -3,7 +3,7 @@ import { useDownloadManager } from '../hooks/useDownloadManager';
 import {
   X, Download, Loader2, Search, Image as ImageIcon,
   ChevronDown, ChevronUp, Music, Subtitles, Film,
-  Check, Clock
+  Check, Clock, ListVideo
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import type {
@@ -77,10 +77,10 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
     try {
       const output = await invoke<ProcessedMetadata>('fetch_metadata_command', { url });
 
-      if (output.video_qualities.length > 0 || output.audio_tracks.length > 0) {
+      if (output.is_playlist || output.video_qualities.length > 0 || output.audio_tracks.length > 0) {
         setMetadata(output);
       } else {
-        // No formats available (playlist or unsupported) — fallback
+        // No formats available and not a playlist — fallback
         setFallbackMode(true);
       }
     } catch (err) {
@@ -98,6 +98,20 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
 
     setIsSubmitting(true);
     setError(null);
+
+    // If it's a playlist, we send it to `add_source_command`
+    if (metadata?.is_playlist) {
+      try {
+        await invoke('add_source_command', { url });
+        handleClose();
+      } catch (err) {
+        setError('Failed to add playlist source. ' + err);
+        console.error(err);
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
 
     let formatOption: string | undefined = undefined;
 
@@ -281,238 +295,253 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
                 </div>
               </div>
 
-              {/* ── Mode Toggle: Video / Audio Only ── */}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setAudioOnly(false)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${!audioOnly
-                    ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/20'
-                    : 'bg-surface-900 border border-surface-700 text-surface-400 hover:bg-surface-700'
-                    }`}
-                >
-                  <Film size={16} /> Video
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAudioOnly(true)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${audioOnly
-                    ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/20'
-                    : 'bg-surface-900 border border-surface-700 text-surface-400 hover:bg-surface-700'
-                    }`}
-                >
-                  <Music size={16} /> Audio Only
-                </button>
-              </div>
-
-              {/* ── Video Quality Section ── */}
-              {!audioOnly && metadata.video_qualities.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-surface-400 mb-2">
-                    <Film size={14} className="inline mr-1.5 -mt-0.5" />
-                    Video Quality
-                  </label>
-
-                  {/* Quick Presets */}
-                  <div className="flex gap-2 mb-2">
-                    {presets.map(p => {
-                      const isAvailable = p.label === 'Best' || metadata.video_qualities.some(q => q.height === p.height);
-                      if (!isAvailable && p.label !== 'Best') return null;
-                      const isActive = p.label === 'Best' ? selectedVideoId === '' : selectedVideoId === p.id;
-                      return (
-                        <button
-                          key={p.label}
-                          type="button"
-                          onClick={() => setSelectedVideoId(p.label === 'Best' ? '' : p.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${isActive
-                            ? 'bg-brand-600 text-white'
-                            : 'bg-surface-900 border border-surface-700 text-surface-400 hover:bg-surface-700 hover:text-surface-200'
-                            }`}
-                        >
-                          {p.icon && <span className="mr-1">{p.icon}</span>}
-                          {p.label}
-                        </button>
-                      );
-                    })}
+              {/* ── Playlist Notice OR Video Options ── */}
+              {metadata.is_playlist ? (
+                <div className="p-4 bg-brand-500/10 border border-brand-500/20 rounded-lg flex items-start gap-3 mt-4">
+                  <ListVideo className="text-brand-400 mt-0.5" size={20} />
+                  <div>
+                    <h4 className="text-sm font-medium text-brand-300">Playlist Detected</h4>
+                    <p className="text-xs text-brand-400/80 mt-1">
+                      This will be added as a Source. All contained videos will be automatically queued for download.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* ── Mode Toggle: Video / Audio Only ── */}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAudioOnly(false)}
+                      className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${!audioOnly
+                        ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/20'
+                        : 'bg-surface-900 border border-surface-700 text-surface-400 hover:bg-surface-700'
+                        }`}
+                    >
+                      <Film size={16} /> Video
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAudioOnly(true)}
+                      className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${audioOnly
+                        ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/20'
+                        : 'bg-surface-900 border border-surface-700 text-surface-400 hover:bg-surface-700'
+                        }`}
+                    >
+                      <Music size={16} /> Audio Only
+                    </button>
                   </div>
 
-                  {/* Advanced Format List (collapsible) */}
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvanced(!showAdvanced)}
-                    className="flex items-center gap-1 text-xs text-surface-500 hover:text-surface-300 transition-colors mb-1"
-                  >
-                    {showAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    {showAdvanced ? 'Hide' : 'Show'} all formats ({metadata.video_qualities.length})
-                  </button>
+                  {/* ── Video Quality Section ── */}
+                  {!audioOnly && metadata.video_qualities.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium text-surface-400 mb-2">
+                        <Film size={14} className="inline mr-1.5 -mt-0.5" />
+                        Video Quality
+                      </label>
 
-                  {showAdvanced && (
-                    <div className="max-h-48 overflow-y-auto rounded-lg border border-surface-700 bg-surface-900">
-                      {metadata.video_qualities.map(q => {
-                        const isActive = selectedVideoId === q.format_id;
-                        return (
-                          <button
-                            key={q.format_id}
-                            type="button"
-                            onClick={() => setSelectedVideoId(q.format_id)}
-                            className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors border-b border-surface-700/50 last:border-b-0 ${isActive
-                              ? 'bg-brand-600/15 text-brand-300'
-                              : 'text-surface-300 hover:bg-surface-800'
-                              }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              {isActive && <Check size={12} className="text-brand-400" />}
-                              <span className="font-medium">{q.height}p</span>
-                              {q.fps && q.fps > 48 && (
-                                <span className="px-1.5 py-0.5 bg-amber-500/15 text-amber-400 rounded text-[10px]">
-                                  {Math.round(q.fps)}fps
-                                </span>
-                              )}
-                              {q.dynamic_range !== 'SDR' && (
-                                <span className="px-1.5 py-0.5 bg-purple-500/15 text-purple-400 rounded text-[10px]">
-                                  {q.dynamic_range}
-                                </span>
-                              )}
-                              <span className="text-surface-500">{q.vcodec}</span>
-                              <span className="text-surface-600">{q.container}</span>
-                            </div>
-                            {q.filesize && (
-                              <span className="text-surface-500 ml-2">{formatFileSize(q.filesize)}</span>
-                            )}
-                          </button>
-                        );
-                      })}
+                      {/* Quick Presets */}
+                      <div className="flex gap-2 mb-2">
+                        {presets.map(p => {
+                          const isAvailable = p.label === 'Best' || metadata.video_qualities.some(q => q.height === p.height);
+                          if (!isAvailable && p.label !== 'Best') return null;
+                          const isActive = p.label === 'Best' ? selectedVideoId === '' : selectedVideoId === p.id;
+                          return (
+                            <button
+                              key={p.label}
+                              type="button"
+                              onClick={() => setSelectedVideoId(p.label === 'Best' ? '' : p.id)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${isActive
+                                ? 'bg-brand-600 text-white'
+                                : 'bg-surface-900 border border-surface-700 text-surface-400 hover:bg-surface-700 hover:text-surface-200'
+                                }`}
+                            >
+                              {p.icon && <span className="mr-1">{p.icon}</span>}
+                              {p.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Advanced Format List (collapsible) */}
+                      <button
+                        type="button"
+                        onClick={() => setShowAdvanced(!showAdvanced)}
+                        className="flex items-center gap-1 text-xs text-surface-500 hover:text-surface-300 transition-colors mb-1"
+                      >
+                        {showAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        {showAdvanced ? 'Hide' : 'Show'} all formats ({metadata.video_qualities.length})
+                      </button>
+
+                      {showAdvanced && (
+                        <div className="max-h-48 overflow-y-auto rounded-lg border border-surface-700 bg-surface-900">
+                          {metadata.video_qualities.map(q => {
+                            const isActive = selectedVideoId === q.format_id;
+                            return (
+                              <button
+                                key={q.format_id}
+                                type="button"
+                                onClick={() => setSelectedVideoId(q.format_id)}
+                                className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors border-b border-surface-700/50 last:border-b-0 ${isActive
+                                  ? 'bg-brand-600/15 text-brand-300'
+                                  : 'text-surface-300 hover:bg-surface-800'
+                                  }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  {isActive && <Check size={12} className="text-brand-400" />}
+                                  <span className="font-medium">{q.height}p</span>
+                                  {q.fps && q.fps > 48 && (
+                                    <span className="px-1.5 py-0.5 bg-amber-500/15 text-amber-400 rounded text-[10px]">
+                                      {Math.round(q.fps)}fps
+                                    </span>
+                                  )}
+                                  {q.dynamic_range !== 'SDR' && (
+                                    <span className="px-1.5 py-0.5 bg-purple-500/15 text-purple-400 rounded text-[10px]">
+                                      {q.dynamic_range}
+                                    </span>
+                                  )}
+                                  <span className="text-surface-500">{q.vcodec}</span>
+                                  <span className="text-surface-600">{q.container}</span>
+                                </div>
+                                {q.filesize && (
+                                  <span className="text-surface-500 ml-2">{formatFileSize(q.filesize)}</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Info text */}
+                      <p className="text-[11px] text-surface-500 mt-1.5 ml-0.5">
+                        {selectedVideoId === ''
+                          ? 'Automatically selects the highest quality available.'
+                          : `Selected format will be merged with the best audio track.`}
+                      </p>
                     </div>
                   )}
 
-                  {/* Info text */}
-                  <p className="text-[11px] text-surface-500 mt-1.5 ml-0.5">
-                    {selectedVideoId === ''
-                      ? 'Automatically selects the highest quality available.'
-                      : `Selected format will be merged with the best audio track.`}
-                  </p>
-                </div>
-              )}
+                  {/* ── Audio Format (Audio Only mode) ── */}
+                  {audioOnly && (
+                    <div>
+                      <label className="block text-sm font-medium text-surface-400 mb-2">
+                        Output Format
+                      </label>
+                      <div className="flex gap-2">
+                        {['mp3', 'opus', 'm4a', 'flac'].map(fmt => (
+                          <button
+                            key={fmt}
+                            type="button"
+                            onClick={() => setAudioExtractFormat(fmt)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium uppercase transition-all ${audioExtractFormat === fmt
+                              ? 'bg-brand-600 text-white'
+                              : 'bg-surface-900 border border-surface-700 text-surface-400 hover:bg-surface-700'
+                              }`}
+                          >
+                            {fmt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-              {/* ── Audio Format (Audio Only mode) ── */}
-              {audioOnly && (
-                <div>
-                  <label className="block text-sm font-medium text-surface-400 mb-2">
-                    Output Format
-                  </label>
-                  <div className="flex gap-2">
-                    {['mp3', 'opus', 'm4a', 'flac'].map(fmt => (
-                      <button
-                        key={fmt}
-                        type="button"
-                        onClick={() => setAudioExtractFormat(fmt)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium uppercase transition-all ${audioExtractFormat === fmt
-                          ? 'bg-brand-600 text-white'
-                          : 'bg-surface-900 border border-surface-700 text-surface-400 hover:bg-surface-700'
-                          }`}
+                  {/* ── Audio Track Selector ── */}
+                  {hasMultipleAudio && !audioOnly && (
+                    <div>
+                      <label className="block text-sm font-medium text-surface-400 mb-2">
+                        <Music size={14} className="inline mr-1.5 -mt-0.5" />
+                        Audio Track
+                      </label>
+                      <select
+                        value={selectedAudioId}
+                        onChange={(e) => setSelectedAudioId(e.target.value)}
+                        className="w-full bg-surface-900 border border-surface-700 rounded-lg px-3 py-2 text-sm text-surface-100 focus:outline-none focus:border-brand-500"
                       >
-                        {fmt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+                        <option value="">Best Auto</option>
+                        {metadata.audio_tracks.map(a => (
+                          <option key={a.format_id} value={a.format_id}>
+                            {a.label}{a.filesize ? ` (${formatFileSize(a.filesize)})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
-              {/* ── Audio Track Selector ── */}
-              {hasMultipleAudio && !audioOnly && (
-                <div>
-                  <label className="block text-sm font-medium text-surface-400 mb-2">
-                    <Music size={14} className="inline mr-1.5 -mt-0.5" />
-                    Audio Track
-                  </label>
-                  <select
-                    value={selectedAudioId}
-                    onChange={(e) => setSelectedAudioId(e.target.value)}
-                    className="w-full bg-surface-900 border border-surface-700 rounded-lg px-3 py-2 text-sm text-surface-100 focus:outline-none focus:border-brand-500"
-                  >
-                    <option value="">Best Auto</option>
-                    {metadata.audio_tracks.map(a => (
-                      <option key={a.format_id} value={a.format_id}>
-                        {a.label}{a.filesize ? ` (${formatFileSize(a.filesize)})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* ── Subtitles ── */}
-              {hasSubtitles && !audioOnly && (
-                <div>
-                  <label className="block text-sm font-medium text-surface-400 mb-2">
-                    <Subtitles size={14} className="inline mr-1.5 -mt-0.5" />
-                    Subtitles
-                  </label>
-                  <div className="max-h-32 overflow-y-auto rounded-lg border border-surface-700 bg-surface-900">
-                    {metadata.subtitle_tracks.map(sub => {
-                      const isChecked = selectedSubtitles.has(sub.language_code);
-                      return (
-                        <label
-                          key={sub.language_code}
-                          className={`flex items-center gap-3 px-3 py-2 text-xs cursor-pointer transition-colors border-b border-surface-700/50 last:border-b-0 ${isChecked ? 'bg-brand-600/10' : 'hover:bg-surface-800'
-                            }`}
-                        >
+                  {/* ── Subtitles ── */}
+                  {hasSubtitles && !audioOnly && (
+                    <div>
+                      <label className="block text-sm font-medium text-surface-400 mb-2">
+                        <Subtitles size={14} className="inline mr-1.5 -mt-0.5" />
+                        Subtitles
+                      </label>
+                      <div className="max-h-32 overflow-y-auto rounded-lg border border-surface-700 bg-surface-900">
+                        {metadata.subtitle_tracks.map(sub => {
+                          const isChecked = selectedSubtitles.has(sub.language_code);
+                          return (
+                            <label
+                              key={sub.language_code}
+                              className={`flex items-center gap-3 px-3 py-2 text-xs cursor-pointer transition-colors border-b border-surface-700/50 last:border-b-0 ${isChecked ? 'bg-brand-600/10' : 'hover:bg-surface-800'
+                                }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleSubtitle(sub.language_code)}
+                                className="rounded border-surface-600 bg-surface-900 text-brand-500 focus:ring-brand-500 focus:ring-offset-0"
+                              />
+                              <span className={isChecked ? 'text-surface-100' : 'text-surface-300'}>
+                                {sub.label}
+                              </span>
+                              {sub.is_auto_generated && (
+                                <span className="px-1.5 py-0.5 bg-surface-700 text-surface-400 rounded text-[10px]">
+                                  auto
+                                </span>
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {selectedSubtitles.size > 0 && (
+                        <label className="flex items-center gap-2 mt-2 text-xs text-surface-400 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={isChecked}
-                            onChange={() => toggleSubtitle(sub.language_code)}
+                            checked={embedSubs}
+                            onChange={(e) => setEmbedSubs(e.target.checked)}
                             className="rounded border-surface-600 bg-surface-900 text-brand-500 focus:ring-brand-500 focus:ring-offset-0"
                           />
-                          <span className={isChecked ? 'text-surface-100' : 'text-surface-300'}>
-                            {sub.label}
-                          </span>
-                          {sub.is_auto_generated && (
-                            <span className="px-1.5 py-0.5 bg-surface-700 text-surface-400 rounded text-[10px]">
-                              auto
-                            </span>
-                          )}
+                          Embed subtitles in video file
                         </label>
-                      );
-                    })}
-                  </div>
-                  {selectedSubtitles.size > 0 && (
-                    <label className="flex items-center gap-2 mt-2 text-xs text-surface-400 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={embedSubs}
-                        onChange={(e) => setEmbedSubs(e.target.checked)}
-                        className="rounded border-surface-600 bg-surface-900 text-brand-500 focus:ring-brand-500 focus:ring-offset-0"
-                      />
-                      Embed subtitles in video file
-                    </label>
+                      )}
+                    </div>
                   )}
-                </div>
-              )}
 
-              {/* ── Container Override ── */}
-              {!audioOnly && metadata.video_qualities.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-surface-400 mb-2">
-                    Container
-                  </label>
-                  <div className="flex gap-2">
-                    {['', 'mp4', 'mkv', 'webm'].map(c => (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() => setSelectedContainer(c)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${selectedContainer === c
-                          ? 'bg-brand-600 text-white'
-                          : 'bg-surface-900 border border-surface-700 text-surface-400 hover:bg-surface-700'
-                          }`}
-                      >
-                        {c === '' ? 'Auto' : c.toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[11px] text-surface-500 mt-1">
-                    {selectedContainer === '' ? 'Automatic container based on codec compatibility.' : `Force output as .${selectedContainer} (ffmpeg will remux if needed).`}
-                  </p>
-                </div>
+                  {/* ── Container Override ── */}
+                  {!audioOnly && metadata.video_qualities.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium text-surface-400 mb-2">
+                        Container
+                      </label>
+                      <div className="flex gap-2">
+                        {['', 'mp4', 'mkv', 'webm'].map(c => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => setSelectedContainer(c)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${selectedContainer === c
+                              ? 'bg-brand-600 text-white'
+                              : 'bg-surface-900 border border-surface-700 text-surface-400 hover:bg-surface-700'
+                              }`}
+                          >
+                            {c === '' ? 'Auto' : c.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-surface-500 mt-1">
+                        {selectedContainer === '' ? 'Automatic container based on codec compatibility.' : `Force output as .${selectedContainer} (ffmpeg will remux if needed).`}
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -541,7 +570,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
             ) : (
               <>
                 <Download size={18} />
-                {audioOnly ? 'Extract Audio' : 'Download'}
+                {metadata?.is_playlist ? 'Add Source & Queue' : (audioOnly ? 'Extract Audio' : 'Download')}
               </>
             )}
           </button>

@@ -24,7 +24,7 @@ mod tests {
         manager.init().await.unwrap();
 
         let platform_id = "youtube";
-        let cookies = "domain.com\tTRUE\t/\tFALSE\t1234567890\tname\tvalue";
+        let cookies = ".youtube.com\tTRUE\t/\tFALSE\t1234567890\tSID\ttest_session_value";
         let method = "manual";
 
         // 1. Set Session

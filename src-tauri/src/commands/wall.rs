@@ -32,6 +32,7 @@ pub struct PostResponse {
     pub status: String,
     pub posted_at: Option<String>,
     pub downloaded_at: Option<String>,
+    pub deleted_at: Option<String>,
     pub created_at: String,
 
     // Joined creator data
@@ -66,6 +67,7 @@ pub async fn get_posts(
 
     let posts = post::Entity::find()
         .filter(post::Column::Status.eq("COMPLETED"))
+        .filter(post::Column::DeletedAt.is_null())
         .order_by_desc(post::Column::DownloadedAt)
         .offset(offset)
         .limit(limit)
@@ -85,6 +87,7 @@ pub async fn get_posts(
 
     let total = post::Entity::find()
         .filter(post::Column::Status.eq("COMPLETED"))
+        .filter(post::Column::DeletedAt.is_null())
         .count(&state.db)
         .await
         .map_err(|e| format!("Database error counting posts: {}", e))?;
@@ -125,6 +128,7 @@ pub async fn get_posts(
             status: post.status,
             posted_at: post.posted_at.map(|t| t.to_rfc3339()),
             downloaded_at: post.downloaded_at.map(|t| t.to_rfc3339()),
+            deleted_at: post.deleted_at.map(|t| t.to_rfc3339()),
             created_at: post.created_at.to_rfc3339(),
 
             creator_name: creator_opt.as_ref().map(|c| c.name.clone()),
@@ -157,36 +161,176 @@ pub async fn reveal_in_explorer(
 
 #[tauri::command]
 pub async fn delete_post(state: State<'_, AppState>, post_id: String) -> Result<(), String> {
-    // 1. Fetch media for this post to get file paths using sea-orm
-    let medias = media::Entity::find()
-        .filter(media::Column::PostId.eq(&post_id))
+    // Soft delete: Just set deleted_at
+    post::Entity::update_many()
+        .col_expr(
+            post::Column::DeletedAt,
+            sea_orm::sea_query::Expr::value(chrono::Utc::now()),
+        )
+        .filter(post::Column::Id.eq(&post_id))
+        .exec(&state.db)
+        .await
+        .map_err(|e| format!("Failed to soft delete post: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn restore_post(state: State<'_, AppState>, post_id: String) -> Result<(), String> {
+    post::Entity::update_many()
+        .col_expr(
+            post::Column::DeletedAt,
+            sea_orm::sea_query::Expr::value(None::<chrono::DateTime<chrono::Utc>>),
+        )
+        .filter(post::Column::Id.eq(&post_id))
+        .exec(&state.db)
+        .await
+        .map_err(|e| format!("Failed to restore post: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_trash_posts(
+    state: State<'_, AppState>,
+    page: u64,
+    limit: u64,
+) -> Result<PostsPage, String> {
+    let p = page.max(1);
+    let offset = (p - 1) * limit;
+
+    let posts = post::Entity::find()
+        .filter(post::Column::Status.eq("COMPLETED"))
+        .filter(post::Column::DeletedAt.is_not_null())
+        .order_by_desc(post::Column::DeletedAt)
+        .offset(offset)
+        .limit(limit)
         .all(&state.db)
         .await
-        .map_err(|e| format!("Database error finding media: {}", e))?;
+        .map_err(|e| format!("Database error fetching trash posts: {}", e))?;
 
-    // 2. Iterate and send files to trash, ignoring missing ones
-    for m in medias {
-        if Path::new(&m.file_path).exists() {
-            let _ = move_to_trash(&m.file_path);
-        }
-        if let Some(thumb) = &m.thumbnail_path {
-            if Path::new(thumb).exists() {
-                let _ = move_to_trash(thumb);
+    let creators: Vec<Option<creator::Model>> = posts
+        .load_one(creator::Entity, &state.db)
+        .await
+        .map_err(|e| format!("Database error loading creators: {}", e))?;
+
+    let media_lists: Vec<Vec<media::Model>> = posts
+        .load_many(media::Entity, &state.db)
+        .await
+        .map_err(|e| format!("Database error loading media: {}", e))?;
+
+    let total = post::Entity::find()
+        .filter(post::Column::Status.eq("COMPLETED"))
+        .filter(post::Column::DeletedAt.is_not_null())
+        .count(&state.db)
+        .await
+        .map_err(|e| format!("Database error counting trash posts: {}", e))?;
+
+    let total_pages = (total as f64 / limit as f64).ceil() as u64;
+
+    let mut response_posts = Vec::with_capacity(posts.len());
+
+    for (i, post) in posts.into_iter().enumerate() {
+        let creator_opt = creators.get(i).cloned().flatten();
+        let medias = media_lists.get(i).cloned().unwrap_or_default();
+
+        let mut media_responses: Vec<MediaResponse> = medias
+            .into_iter()
+            .map(|m| MediaResponse {
+                id: m.id,
+                media_type: m.media_type,
+                file_path: m.file_path,
+                thumbnail_path: m.thumbnail_path,
+                order_index: m.order_index,
+                width: m.width,
+                height: m.height,
+                duration: m.duration,
+                file_size: m.file_size,
+            })
+            .collect();
+
+        media_responses.sort_by_key(|m| m.order_index);
+
+        response_posts.push(PostResponse {
+            id: post.id,
+            creator_id: post.creator_id,
+            source_id: post.source_id,
+            title: post.title,
+            description: post.description,
+            original_url: post.original_url,
+            status: post.status,
+            posted_at: post.posted_at.map(|t| t.to_rfc3339()),
+            downloaded_at: post.downloaded_at.map(|t| t.to_rfc3339()),
+            deleted_at: post.deleted_at.map(|t| t.to_rfc3339()),
+            created_at: post.created_at.to_rfc3339(),
+
+            creator_name: creator_opt.as_ref().map(|c| c.name.clone()),
+            creator_handle: creator_opt.as_ref().and_then(|c| c.handle.clone()),
+            creator_avatar: creator_opt.as_ref().and_then(|c| c.avatar_path.clone()),
+
+            media: media_responses,
+        });
+    }
+
+    Ok(PostsPage {
+        posts: response_posts,
+        total,
+        page: p,
+        limit,
+        total_pages,
+    })
+}
+
+#[tauri::command]
+pub async fn empty_trash_command(state: State<'_, AppState>) -> Result<usize, String> {
+    // 1. Find all logically deleted posts
+    let trashed_posts = post::Entity::find()
+        .filter(post::Column::DeletedAt.is_not_null())
+        .all(&state.db)
+        .await
+        .map_err(|e| format!("Database error finding trash: {}", e))?;
+
+    if trashed_posts.is_empty() {
+        return Ok(0);
+    }
+
+    let mut deleted_count = 0;
+
+    for p in trashed_posts {
+        // Fetch media for this post
+        let medias = media::Entity::find()
+            .filter(media::Column::PostId.eq(&p.id))
+            .all(&state.db)
+            .await
+            .unwrap_or_default();
+
+        // Send files to recycling bin
+        for m in medias {
+            if Path::new(&m.file_path).exists() {
+                let _ = move_to_trash(&m.file_path);
             }
+            if let Some(thumb) = &m.thumbnail_path {
+                if Path::new(thumb).exists() {
+                    let _ = move_to_trash(thumb);
+                }
+            }
+        }
+
+        // Hard delete media records
+        let _ = media::Entity::delete_many()
+            .filter(media::Column::PostId.eq(&p.id))
+            .exec(&state.db)
+            .await;
+
+        // Hard delete post record
+        if post::Entity::delete_by_id(&p.id)
+            .exec(&state.db)
+            .await
+            .is_ok()
+        {
+            deleted_count += 1;
         }
     }
 
-    // 3. Hard delete records from DB
-    media::Entity::delete_many()
-        .filter(media::Column::PostId.eq(&post_id))
-        .exec(&state.db)
-        .await
-        .map_err(|e| format!("Failed to delete media from db: {}", e))?;
-
-    post::Entity::delete_by_id(&post_id)
-        .exec(&state.db)
-        .await
-        .map_err(|e| format!("Failed to delete post from db: {}", e))?;
-
-    Ok(())
+    Ok(deleted_count)
 }

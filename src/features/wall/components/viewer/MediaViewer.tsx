@@ -10,9 +10,10 @@ interface MediaViewerProps {
     onClose: () => void;
     onNextPost?: () => void;
     onPrevPost?: () => void;
+    isTrashMode?: boolean;
 }
 
-export function MediaViewer({ post, onClose, onNextPost, onPrevPost }: MediaViewerProps) {
+export function MediaViewer({ post, onClose, onNextPost, onPrevPost, isTrashMode }: MediaViewerProps) {
     const [currentIndex, setCurrentIndex] = useState(0);
 
     // Filter out missing/invalid media, but trust what we got from the backend
@@ -134,7 +135,7 @@ export function MediaViewer({ post, onClose, onNextPost, onPrevPost }: MediaView
             </div>
 
             {/* Sidebar Details Area Right */}
-            <MediaSidebar post={post} media={currentMedia} onClose={onClose} />
+            <MediaSidebar post={post} media={currentMedia} onClose={onClose} isTrashMode={isTrashMode} />
         </div>,
         document.body
     );

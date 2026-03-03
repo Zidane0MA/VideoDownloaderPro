@@ -20,6 +20,7 @@ export interface Post {
     status: string;
     posted_at: string | null;
     downloaded_at: string | null;
+    deleted_at: string | null;
     created_at: string;
 
     // Joined creator data
