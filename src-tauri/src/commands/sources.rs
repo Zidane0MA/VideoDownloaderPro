@@ -1,5 +1,8 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
+use sea_orm::{
+    sea_query::Expr, ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
+    Value,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{Manager, State};
@@ -79,6 +82,14 @@ pub async fn delete_source_command(
     state: State<'_, AppState>,
     source_id: String,
 ) -> Result<(), String> {
+    // Detach posts from this source (set source_id = NULL) to avoid FK violation
+    post::Entity::update_many()
+        .col_expr(post::Column::SourceId, Expr::value(Value::String(None)))
+        .filter(post::Column::SourceId.eq(source_id.clone()))
+        .exec(&state.db)
+        .await
+        .map_err(|e| format!("Failed to detach posts: {}", e))?;
+
     source::Entity::delete_by_id(source_id)
         .exec(&state.db)
         .await

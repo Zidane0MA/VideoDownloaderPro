@@ -1,13 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useDownloadManager } from '../hooks/useDownloadManager';
 import { DownloadItem } from './DownloadItem';
 import { DownloadStatus } from '../types/download';
-import { DownloadCloud } from 'lucide-react';
+import { DownloadCloud, Play, Pause, History, Download, Trash2 } from 'lucide-react';
+import { Virtuoso } from 'react-virtuoso';
 
 export const DownloadsList: React.FC = () => {
-  const { tasks, isQueuePaused, pauseQueue, resumeQueue } = useDownloadManager();
+  const { tasks, isQueuePaused, pauseQueue, resumeQueue, clearHistory } = useDownloadManager();
+  const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
 
-  // ... (filters remain same) ...
   const activeTasks = tasks.filter(task =>
     task.status === DownloadStatus.Processing ||
     task.status === DownloadStatus.Paused ||
@@ -20,65 +21,113 @@ export const DownloadsList: React.FC = () => {
     task.status === DownloadStatus.Cancelled
   );
 
+  const currentTasks = activeTab === 'active' ? activeTasks : historyTasks;
+
+  // We add a little margin to the pill based on the tab
+  const pillOffset = activeTab === 'active' ? '4px' : 'calc(50% + 2px)';
+
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* Active Downloads Section */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-surface-100 flex items-center gap-2">
-            Active Downloads
-            <span className="text-xs font-normal text-surface-400 bg-surface-800 px-2 py-0.5 rounded-full border border-surface-700">
-              {activeTasks.length}
-            </span>
-          </h2>
-          <div className="flex items-center gap-2">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Segmented Control Header */}
+      <div className="flex items-center justify-between">
+        <div className="inline-flex bg-surface-900/60 p-1 rounded-xl border border-surface-700/50 backdrop-blur-md relative shadow-inner">
+          {/* Active Tab Background Pill */}
+          <div
+            className="absolute inset-y-1 bg-surface-700 rounded-lg shadow-sm transition-all duration-300 ease-out"
+            style={{
+              width: 'calc(50% - 6px)',
+              left: pillOffset,
+            }}
+            aria-hidden="true"
+          />
+
+          <button
+            onClick={() => setActiveTab('active')}
+            className={`relative flex items-center justify-center gap-2 px-6 py-2 text-sm font-medium rounded-lg transition-colors z-10 w-36 ${activeTab === 'active' ? 'text-surface-100' : 'text-surface-400 hover:text-surface-200'
+              }`}
+          >
+            <Download size={16} /> Active
+            {activeTasks.length > 0 && (
+              <span className={`flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] tabular-nums transition-colors ${activeTab === 'active' ? 'bg-brand-500/20 text-brand-300 border border-brand-500/30' : 'bg-surface-800 text-surface-500'
+                }`}>
+                {activeTasks.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`relative flex items-center justify-center gap-2 px-6 py-2 text-sm font-medium rounded-lg transition-colors z-10 w-36 ${activeTab === 'history' ? 'text-surface-100' : 'text-surface-400 hover:text-surface-200'
+              }`}
+          >
+            <History size={16} /> History
+          </button>
+        </div>
+
+        {/* Actions based on tab */}
+        {activeTab === 'active' && (
+          <div className="flex items-center gap-2 animate-in fade-in duration-300 zoom-in-95">
             {!isQueuePaused ? (
               <button
                 onClick={pauseQueue}
                 disabled={activeTasks.length === 0}
-                className="text-xs font-medium px-3 py-1.5 rounded-lg bg-surface-800 hover:bg-surface-700 text-surface-300 hover:text-surface-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-surface-700"
+                className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-lg bg-surface-800 hover:bg-surface-700 text-surface-300 hover:text-surface-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-surface-700 shadow-sm"
               >
-                Pause Queue
+                <Pause size={14} className="fill-current" /> Pause Queue
               </button>
             ) : (
               <button
                 onClick={resumeQueue}
-                className="text-xs font-medium px-3 py-1.5 rounded-lg bg-surface-800 hover:bg-surface-700 text-yellow-500 hover:text-yellow-400 transition-all border border-yellow-500/20 hover:border-yellow-500/40"
+                className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-lg bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 transition-all border border-yellow-500/30 shadow-sm"
               >
-                Resume Queue
+                <Play size={14} className="fill-current" /> Resume Queue
               </button>
             )}
           </div>
-        </div>
+        )}
 
-        {activeTasks.length > 0 ? (
-          <div className="grid gap-3">
-            {activeTasks.map(task => (
-              <DownloadItem key={task.id} task={task} />
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center p-12 border border-dashed border-surface-700/70 rounded-2xl bg-surface-800/50">
-            <div className="p-4 bg-surface-900 rounded-full mb-3 border border-surface-700/50 shadow-inner">
-              <DownloadCloud className="w-8 h-8 text-surface-500" />
-            </div>
-            <p className="text-surface-200 font-medium">No active downloads</p>
-            <p className="text-sm text-surface-400">Add a URL to get started</p>
+        {activeTab === 'history' && historyTasks.length > 0 && (
+          <div className="flex items-center gap-2 animate-in fade-in duration-300 zoom-in-95">
+            <button
+              onClick={clearHistory}
+              className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all border border-red-500/20 shadow-sm"
+            >
+              <Trash2 size={14} /> Clear History
+            </button>
           </div>
         )}
-      </section>
+      </div>
 
-      {/* History Section */}
-      {historyTasks.length > 0 && (
-        <section>
-          <h2 className="text-xl font-semibold text-surface-100 mb-4">History</h2>
-          <div className="grid gap-4">
-            {historyTasks.map(task => (
-              <DownloadItem key={task.id} task={task} />
-            ))}
+      {/* List Container */}
+      <div className="min-h-[400px] relative">
+        {currentTasks.length > 0 ? (
+          <Virtuoso
+            useWindowScroll
+            data={currentTasks}
+            itemContent={(_, task) => (
+              <div className="pb-3 px-0.5">
+                <DownloadItem task={task} />
+              </div>
+            )}
+          />
+        ) : (
+          <div className="absolute inset-x-0 flex flex-col items-center justify-center p-16 border border-dashed border-surface-700/70 rounded-2xl bg-surface-800/30 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="p-5 bg-surface-900/80 rounded-full mb-4 border border-surface-700/50 shadow-inner">
+              {activeTab === 'active' ? (
+                <DownloadCloud className="w-10 h-10 text-surface-500" />
+              ) : (
+                <History className="w-10 h-10 text-surface-500" />
+              )}
+            </div>
+            <p className="text-lg text-surface-200 font-medium mb-1">
+              {activeTab === 'active' ? 'No active downloads' : 'No download history'}
+            </p>
+            <p className="text-sm text-surface-400">
+              {activeTab === 'active' ? 'Add a URL to get started' : 'Your completed and failed downloads will appear here'}
+            </p>
           </div>
-        </section>
-      )}
+        )}
+      </div>
     </div>
   );
 };

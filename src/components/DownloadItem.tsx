@@ -1,12 +1,12 @@
 import React from 'react';
 import { DownloadTask, DownloadStatus } from '../types/download';
 import { useDownloadManager } from '../hooks/useDownloadManager';
-import { 
-  Play, 
-  Pause, 
-  X, 
-  RotateCw, 
-  AlertCircle, 
+import {
+  Play,
+  Pause,
+  X,
+  RotateCw,
+  AlertCircle,
   CheckCircle2,
   Image as ImageIcon
 } from 'lucide-react';
@@ -45,9 +45,9 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ task }) => {
         {/* Thumbnail Section */}
         <div className="relative w-32 aspect-video bg-surface-900 rounded-lg overflow-hidden flex-shrink-0 border border-surface-700/50">
           {task.thumbnail ? (
-            <img 
-              src={task.thumbnail} 
-              alt={task.title || "Video thumbnail"} 
+            <img
+              src={task.thumbnail}
+              alt={task.title || "Video thumbnail"}
               className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
             />
           ) : (
@@ -55,11 +55,11 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ task }) => {
               <ImageIcon size={24} />
             </div>
           )}
-          
+
           {/* Status Overlay on Thumbnail */}
           <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors" />
           {isActive && (
-            <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/60 backdrop-blur-md rounded text-[10px] font-medium text-white tabular-nums">
+            <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/60 backdrop-blur-md rounded text-[10px] font-medium text-white shadow-sm" style={{ fontVariantNumeric: 'tabular-nums' }}>
               {Math.round(task.progress)}%
             </div>
           )}
@@ -72,9 +72,9 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ task }) => {
               {task.title || task.url}
             </h3>
             {task.title && (
-               <p className="text-xs text-surface-400 truncate font-mono opacity-60 hover:opacity-100 transition-opacity">
-                 {task.url}
-               </p>
+              <p className="text-xs text-surface-400 truncate font-mono opacity-60 hover:opacity-100 transition-opacity">
+                {task.url}
+              </p>
             )}
           </div>
 
@@ -83,9 +83,8 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ task }) => {
             {isActive && (
               <div className="h-1.5 w-full bg-surface-900 rounded-full overflow-hidden">
                 <div
-                  className={`h-full transition-all duration-300 ${
-                     isPaused ? 'bg-yellow-500/80' : 'bg-brand-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]'
-                  }`}
+                  className={`h-full transition-all duration-300 ${isPaused ? 'bg-yellow-500/80' : 'bg-brand-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]'
+                    }`}
                   style={{ width: `${task.progress}%` }}
                 />
               </div>
@@ -93,45 +92,45 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ task }) => {
 
             {/* Metadata Row */}
             <div className="flex items-center gap-3 text-xs text-surface-300 font-medium">
-               <div className={`flex items-center gap-1.5 ${getStatusColor(task.status as string)}`}>
-                  {task.status === DownloadStatus.Processing && <Play size={12} className="fill-current" />}
-                  {task.status === DownloadStatus.Paused && <Pause size={12} className="fill-current" />}
-                  {task.status === DownloadStatus.Completed && <CheckCircle2 size={12} />}
-                  {task.status === DownloadStatus.Failed && <AlertCircle size={12} />}
-                  <span>{task.status}</span>
-               </div>
+              <div className={`flex items-center gap-1.5 ${getStatusColor(task.status as string)}`}>
+                {task.status === DownloadStatus.Processing && <Play size={12} className="fill-current" />}
+                {task.status === DownloadStatus.Paused && <Pause size={12} className="fill-current" />}
+                {task.status === DownloadStatus.Completed && <CheckCircle2 size={12} />}
+                {task.status === DownloadStatus.Failed && <AlertCircle size={12} />}
+                <span>{task.status}</span>
+              </div>
 
-               {isActive && (
-                 <>
-                   <span className="text-surface-600">•</span>
-                   <span>{formatBytes(task.downloaded_bytes)} / {formatBytes(task.total_bytes)}</span>
-                   {task.speed && (
-                     <>
-                        <span className="text-surface-600">•</span>
-                        <span className="text-surface-200">{task.speed}</span>
-                     </>
-                   )}
-                   {task.eta && (
-                     <>
-                        <span className="text-surface-600">•</span>
-                        <span className="text-brand-300">ETA: {task.eta}</span>
-                     </>
-                   )}
-                 </>
-               )}
-                
-               {task.status === DownloadStatus.Completed && task.total_bytes && (
-                 <>
-                    <span className="text-surface-600">•</span>
-                    <span>{formatBytes(task.total_bytes)}</span>
-                 </>
-               )}
-               
-               {task.error_message && (
-                  <span className="text-red-400 truncate max-w-[200px]" title={task.error_message}>
-                    — {task.error_message}
-                  </span>
-               )}
+              {isActive && (
+                <>
+                  <span className="text-surface-600">•</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatBytes(task.downloaded_bytes)} / {formatBytes(task.total_bytes)}</span>
+                  {task.speed && (
+                    <>
+                      <span className="text-surface-600">•</span>
+                      <span className="text-surface-200" style={{ fontVariantNumeric: 'tabular-nums' }}>{task.speed}</span>
+                    </>
+                  )}
+                  {task.eta && (
+                    <>
+                      <span className="text-surface-600">•</span>
+                      <span className="text-brand-300" style={{ fontVariantNumeric: 'tabular-nums' }}>{task.eta}</span>
+                    </>
+                  )}
+                </>
+              )}
+
+              {task.status === DownloadStatus.Completed && task.total_bytes && (
+                <>
+                  <span className="text-surface-600">•</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatBytes(task.total_bytes)}</span>
+                </>
+              )}
+
+              {task.error_message && (
+                <span className="text-red-400 truncate max-w-[200px]" title={task.error_message}>
+                  — {task.error_message}
+                </span>
+              )}
             </div>
           </div>
         </div>

@@ -194,6 +194,15 @@ export function useDownloadManager() {
     }
   };
 
+  const clearHistory = async () => {
+    try {
+      await invoke('clear_download_history');
+      await fetchQueueStatus();
+    } catch (error) {
+      console.error('Failed to clear history:', error);
+    }
+  };
+
   return {
     tasks,
     isQueuePaused,
@@ -204,6 +213,7 @@ export function useDownloadManager() {
     retryDownload,
     pauseQueue,
     resumeQueue,
+    clearHistory,
     refreshQueue: fetchQueueStatus,
   };
 }
