@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, EntityTrait, QueryOrder, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::Serialize;
 use tauri::State;
 use uuid::Uuid;
@@ -361,4 +361,80 @@ pub async fn fetch_metadata_command(
             })
         }
     }
+}
+
+/// Removes completed and cancelled download tasks from the database.
+///
+/// Failed tasks are intentionally preserved so the user can retry them.
+/// This only clears the download *log* — it never deletes downloaded files.
+#[tauri::command]
+pub async fn clear_download_history(state: State<'_, AppState>) -> Result<u64, String> {
+    let result = download_task::Entity::delete_many()
+        .filter(download_task::Column::Status.is_in(["COMPLETED", "CANCELLED"]))
+        .exec(&state.db)
+        .await
+        .map_err(|e| format!("Database error: {}", e))?;
+
+    tracing::info!(
+        "Cleared {} completed/cancelled tasks from history",
+        result.rows_affected
+    );
+
+    Ok(result.rows_affected)
+}
+
+/// Bulk-requeues every failed download task.
+///
+/// Resets each failed task's progress, retries counter, and error message,
+/// then wakes the scheduler so they get picked up immediately.
+#[tauri::command]
+pub async fn retry_all_failed(
+    state: State<'_, AppState>,
+    queue: State<'_, DownloadQueue>,
+) -> Result<u64, String> {
+    let result = download_task::Entity::update_many()
+        .col_expr(
+            download_task::Column::Status,
+            sea_orm::sea_query::Expr::value("QUEUED"),
+        )
+        .col_expr(
+            download_task::Column::Retries,
+            sea_orm::sea_query::Expr::value(0),
+        )
+        .col_expr(
+            download_task::Column::Progress,
+            sea_orm::sea_query::Expr::value(0.0_f32),
+        )
+        .col_expr(
+            download_task::Column::ErrorMessage,
+            sea_orm::sea_query::Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            download_task::Column::StartedAt,
+            sea_orm::sea_query::Expr::value(Option::<chrono::DateTime<chrono::Utc>>::None),
+        )
+        .col_expr(
+            download_task::Column::CompletedAt,
+            sea_orm::sea_query::Expr::value(Option::<chrono::DateTime<chrono::Utc>>::None),
+        )
+        .col_expr(
+            download_task::Column::Speed,
+            sea_orm::sea_query::Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            download_task::Column::Eta,
+            sea_orm::sea_query::Expr::value(Option::<String>::None),
+        )
+        .filter(download_task::Column::Status.eq("FAILED"))
+        .exec(&state.db)
+        .await
+        .map_err(|e| format!("Database error: {}", e))?;
+
+    if result.rows_affected > 0 {
+        // Single wake is enough — the scheduler loops until no QUEUED tasks remain.
+        queue.add_task();
+        tracing::info!("Re-queued {} failed tasks for retry", result.rows_affected);
+    }
+
+    Ok(result.rows_affected)
 }

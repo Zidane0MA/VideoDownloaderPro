@@ -475,6 +475,7 @@ mod tests {
             like_count: None,
             webpage_url: None,
             original_url: None,
+            url: None,
             thumbnails: None,
             formats: Some(formats),
             subtitles,

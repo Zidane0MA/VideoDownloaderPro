@@ -192,7 +192,11 @@ pub async fn add_source_command(
         .map_err(|e| format!("Database error fetching posts: {}", e))?;
 
     for p in child_posts {
-        // Only queue pending
+        // Only queue pending entries that have a valid URL
+        if p.original_url.is_empty() {
+            tracing::warn!("Skipping post {} — no download URL available", p.id);
+            continue;
+        }
         if p.status == "PENDING" {
             let task_id = Uuid::new_v4().to_string();
             let new_task = download_task::ActiveModel {

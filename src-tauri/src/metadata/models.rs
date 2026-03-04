@@ -90,6 +90,10 @@ pub struct YtDlpVideo {
 
     pub webpage_url: Option<String>,
     pub original_url: Option<String>,
+    /// Generic URL field — yt-dlp populates this in `--flat-playlist` entries
+    /// where `webpage_url` is absent. Used as fallback for post `original_url`.
+    #[serde(default)]
+    pub url: Option<String>,
 
     pub thumbnails: Option<Vec<YtDlpThumbnail>>,
     pub formats: Option<Vec<YtDlpFormat>>,

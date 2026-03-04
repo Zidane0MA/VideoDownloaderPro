@@ -112,14 +112,25 @@ async fn upsert_creator(db: &impl ConnectionTrait, v: &YtDlpVideo) -> Result<Str
     let id = v
         .uploader_id
         .clone()
+        .or_else(|| v.channel_id.clone())
         .unwrap_or_else(|| "unknown".to_string());
-    let name = v.uploader.clone().unwrap_or_else(|| "Unknown".to_string());
-    let url = v.uploader_url.clone().unwrap_or_default();
+    let name = v
+        .uploader
+        .clone()
+        .or_else(|| v.channel.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
+    let url = v
+        .uploader_url
+        .clone()
+        .or_else(|| v.channel_url.clone())
+        .unwrap_or_default();
 
     let platform = v
         .webpage_url
         .as_deref()
+        .or(v.url.as_deref())
         .or(v.uploader_url.as_deref())
+        .or(v.channel_url.as_deref())
         .and_then(crate::platform::detect_platform)
         .unwrap_or("unknown")
         .to_string();
@@ -161,7 +172,12 @@ async fn upsert_post(
         source_id: Set(source_id),
         title: Set(Some(v.title.clone())),
         description: Set(v.description.clone()),
-        original_url: Set(v.webpage_url.clone().unwrap_or_default()),
+        original_url: Set(v
+            .webpage_url
+            .clone()
+            .or_else(|| v.url.clone())
+            .or_else(|| v.original_url.clone())
+            .unwrap_or_default()),
         status: Set("PENDING".to_string()),
         posted_at: Set(parse_date(&v.upload_date)),
         raw_json: Set(raw_json),
@@ -175,7 +191,8 @@ async fn upsert_post(
                     post::Column::Title,
                     post::Column::Description,
                     post::Column::RawJson,
-                    post::Column::SourceId, // Update source if it was missing?
+                    post::Column::SourceId,
+                    post::Column::OriginalUrl, // Fix stale empty URLs from flat-playlist entries
                 ])
                 .to_owned(),
         )

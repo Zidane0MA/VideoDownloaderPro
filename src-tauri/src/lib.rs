@@ -191,6 +191,8 @@ pub fn run() {
             commands::download::pause_queue,
             commands::download::resume_queue,
             commands::download::fetch_metadata_command,
+            commands::download::clear_download_history,
+            commands::download::retry_all_failed,
             commands::auth::get_auth_status,
             commands::auth::update_session,
             commands::auth::delete_session,

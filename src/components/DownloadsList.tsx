@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import { useDownloadManager } from '../hooks/useDownloadManager';
 import { DownloadItem } from './DownloadItem';
 import { DownloadStatus } from '../types/download';
-import { DownloadCloud, Play, Pause, History, Download, Trash2 } from 'lucide-react';
+import { DownloadCloud, Play, Pause, History, Download, Trash2, RotateCw } from 'lucide-react';
 import { Virtuoso } from 'react-virtuoso';
 
 export const DownloadsList: React.FC = () => {
-  const { tasks, isQueuePaused, pauseQueue, resumeQueue, clearHistory } = useDownloadManager();
+  const { tasks, isQueuePaused, pauseQueue, resumeQueue, clearHistory, retryAllFailed } = useDownloadManager();
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
 
   const activeTasks = tasks.filter(task =>
@@ -20,6 +20,8 @@ export const DownloadsList: React.FC = () => {
     task.status === DownloadStatus.Failed ||
     task.status === DownloadStatus.Cancelled
   );
+
+  const failedCount = historyTasks.filter(t => t.status === DownloadStatus.Failed).length;
 
   const currentTasks = activeTab === 'active' ? activeTasks : historyTasks;
 
@@ -88,6 +90,17 @@ export const DownloadsList: React.FC = () => {
 
         {activeTab === 'history' && historyTasks.length > 0 && (
           <div className="flex items-center gap-2 animate-in fade-in duration-300 zoom-in-95">
+            {failedCount > 0 && (
+              <button
+                onClick={retryAllFailed}
+                className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 transition-all border border-brand-500/20 shadow-sm"
+              >
+                <RotateCw size={14} /> Retry Failed
+                <span className="min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-brand-500/20 text-[10px] text-brand-300 px-1" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {failedCount}
+                </span>
+              </button>
+            )}
             <button
               onClick={clearHistory}
               className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all border border-red-500/20 shadow-sm"

@@ -322,6 +322,12 @@ pub async fn empty_trash_command(state: State<'_, AppState>) -> Result<usize, St
             .exec(&state.db)
             .await;
 
+        // Hard delete download_tasks references
+        let _ = crate::entity::download_task::Entity::delete_many()
+            .filter(crate::entity::download_task::Column::PostId.eq(&p.id))
+            .exec(&state.db)
+            .await;
+
         // Hard delete post record
         if post::Entity::delete_by_id(&p.id)
             .exec(&state.db)

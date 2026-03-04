@@ -7,6 +7,7 @@ import { Loader2, Trash2 as TrashIcon } from 'lucide-react';
 import type { Post } from '../../types/wall';
 import { invoke } from '@tauri-apps/api/core';
 import { useQueryClient } from '@tanstack/react-query';
+import { ConfirmModal } from '../../components/ui/ConfirmModal';
 
 export function Trash() {
     const queryClient = useQueryClient();
@@ -18,6 +19,7 @@ export function Trash() {
     const [selectedPost, setSelectedPost] = useState<Post | null>(null);
     const [isEmptying, setIsEmptying] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
 
     useEffect(() => {
         const obs = new IntersectionObserver(
@@ -40,11 +42,12 @@ export function Trash() {
         return data?.pages.flatMap((page) => page.posts) ?? [];
     }, [data]);
 
-    const handleEmptyTrash = async () => {
-        if (!window.confirm("Are you sure you want to permanently delete all items in the trash? This action cannot be undone and files will be moved to your system's Recycle Bin.")) {
-            return;
-        }
+    const handleEmptyTrashClick = () => {
+        setIsConfirmModalOpen(true);
+    };
 
+    const handleConfirmEmptyTrash = async () => {
+        setIsConfirmModalOpen(false);
         setIsEmptying(true);
         setError(null);
         try {
@@ -118,7 +121,7 @@ export function Trash() {
                     Trash
                 </h2>
                 <button
-                    onClick={handleEmptyTrash}
+                    onClick={handleEmptyTrashClick}
                     disabled={isEmptying}
                     className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600/90 hover:bg-red-500 rounded-lg transition-colors disabled:opacity-50"
                 >
@@ -149,6 +152,16 @@ export function Trash() {
                     isTrashMode={true}
                 />
             )}
+
+            <ConfirmModal
+                isOpen={isConfirmModalOpen}
+                title="Empty Trash"
+                message="Are you sure you want to permanently delete all items in the trash? This action cannot be undone and files will be moved to your system's Recycle Bin."
+                onConfirm={handleConfirmEmptyTrash}
+                onCancel={() => setIsConfirmModalOpen(false)}
+                confirmText="Empty Trash"
+                isDanger={true}
+            />
         </div>
     );
 }

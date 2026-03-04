@@ -3,6 +3,7 @@ import type { Post, Media } from '../../../../types/wall';
 import { revealInExplorer, deletePost } from '../../api/viewer';
 import { invoke } from '@tauri-apps/api/core';
 import { useState } from 'react';
+import { ConfirmModal } from '../../../../components/ui/ConfirmModal';
 
 interface MediaSidebarProps {
     post: Post;
@@ -14,6 +15,7 @@ interface MediaSidebarProps {
 export function MediaSidebar({ post, media, onClose, isTrashMode }: MediaSidebarProps) {
     const [isDeleting, setIsDeleting] = useState(false);
     const [isRestoring, setIsRestoring] = useState(false);
+    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
     const handleReveal = async () => {
         try {
@@ -23,14 +25,17 @@ export function MediaSidebar({ post, media, onClose, isTrashMode }: MediaSidebar
         }
     };
 
-    const handleDelete = async () => {
-        if (!window.confirm('Are you sure you want to delete this file?\nThis action cannot be undone.')) return;
+    const handleDeleteClick = () => {
+        setIsConfirmOpen(true);
+    };
 
+    const handleConfirmDelete = async () => {
+        setIsConfirmOpen(false);
         setIsDeleting(true);
         try {
-            await deletePost(post.id); // This already does a soft-delete if on wall, or could be replaced if we have a hard-delete per item in the future. Wait, in Trash mode, we don't have a single-item hard delete. Actually wall.rs delete_post does soft-delete. Let's just do that for now.
+            await deletePost(post.id);
             onClose(); // Close viewer after deletion
-        } catch (error) {
+        } catch (error: any) {
             console.error('Failed to delete post:', error);
             setIsDeleting(false);
         }
@@ -142,7 +147,7 @@ export function MediaSidebar({ post, media, onClose, isTrashMode }: MediaSidebar
                     </>
                 ) : (
                     <button
-                        onClick={handleDelete}
+                        onClick={handleDeleteClick}
                         disabled={isDeleting}
                         className="flex items-center justify-center gap-2 w-full px-4 py-2 border border-red-500/20 hover:bg-red-500/10 text-red-500 rounded-lg transition-colors font-medium text-sm disabled:opacity-50"
                     >
@@ -151,6 +156,16 @@ export function MediaSidebar({ post, media, onClose, isTrashMode }: MediaSidebar
                     </button>
                 )}
             </div>
+
+            <ConfirmModal
+                isOpen={isConfirmOpen}
+                title="Delete File"
+                message="Are you sure you want to delete this file?\nThis action cannot be undone."
+                onConfirm={handleConfirmDelete}
+                onCancel={() => setIsConfirmOpen(false)}
+                confirmText="Delete"
+                isDanger={true}
+            />
         </div>
     );
 }

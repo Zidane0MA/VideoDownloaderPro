@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ListVideo, Trash2, RefreshCw, Layers, Plus, X, Loader2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { ConfirmModal } from '../../components/ui/ConfirmModal';
 
 export interface SourceResponse {
     id: string;
@@ -35,10 +36,13 @@ export const Sources: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Add Source state
     const [showAddInput, setShowAddInput] = useState(false);
     const [addUrl, setAddUrl] = useState('');
     const [isAdding, setIsAdding] = useState(false);
+
+    // Confirm Modal state
+    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+    const [sourceToDelete, setSourceToDelete] = useState<{ id: string, name: string } | null>(null);
 
     const fetchSources = useCallback(async () => {
         try {
@@ -58,17 +62,23 @@ export const Sources: React.FC = () => {
         fetchSources();
     }, [fetchSources]);
 
-    const handleDelete = async (id: string, name: string) => {
-        if (!window.confirm(`Are you sure you want to delete the source "${name}"?\nThis won't delete already downloaded media.`)) {
-            return;
-        }
+    const handleDeleteClick = (id: string, name: string) => {
+        setSourceToDelete({ id, name });
+        setIsConfirmOpen(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!sourceToDelete) return;
+        setIsConfirmOpen(false);
         setError(null);
         try {
-            await invoke('delete_source_command', { sourceId: id });
+            await invoke('delete_source_command', { sourceId: sourceToDelete.id });
             fetchSources();
         } catch (err) {
             console.error(err);
             setError(String(err) || 'Failed to delete source');
+        } finally {
+            setSourceToDelete(null);
         }
     };
 
@@ -210,8 +220,8 @@ export const Sources: React.FC = () => {
                         <div
                             key={source.id}
                             className={`p-4 bg-surface-800 border rounded-xl transition-colors flex items-start gap-4 ${source.is_active
-                                    ? 'border-surface-700 hover:border-surface-600'
-                                    : 'border-surface-700/50 opacity-60'
+                                ? 'border-surface-700 hover:border-surface-600'
+                                : 'border-surface-700/50 opacity-60'
                                 }`}
                         >
                             <div className="p-3 bg-surface-900 rounded-lg text-brand-400 flex-shrink-0">
@@ -245,15 +255,15 @@ export const Sources: React.FC = () => {
                                 <button
                                     onClick={() => handleToggleActive(source)}
                                     className={`p-1 rounded-lg transition-colors ${source.is_active
-                                            ? 'text-brand-400 hover:text-brand-300'
-                                            : 'text-surface-500 hover:text-surface-300'
+                                        ? 'text-brand-400 hover:text-brand-300'
+                                        : 'text-surface-500 hover:text-surface-300'
                                         }`}
                                     title={source.is_active ? 'Disable source' : 'Enable source'}
                                 >
                                     {source.is_active ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                                 </button>
                                 <button
-                                    onClick={() => handleDelete(source.id, source.name)}
+                                    onClick={() => handleDeleteClick(source.id, source.name)}
                                     className="p-2 text-surface-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                                     title="Delete source"
                                 >
@@ -264,6 +274,19 @@ export const Sources: React.FC = () => {
                     ))}
                 </div>
             )}
+
+            <ConfirmModal
+                isOpen={isConfirmOpen}
+                title="Delete Source"
+                message={`Are you sure you want to delete the source "${sourceToDelete?.name}"?\nThis won't delete already downloaded media.`}
+                onConfirm={handleConfirmDelete}
+                onCancel={() => {
+                    setIsConfirmOpen(false);
+                    setSourceToDelete(null);
+                }}
+                confirmText="Delete"
+                isDanger={true}
+            />
         </div>
     );
 };

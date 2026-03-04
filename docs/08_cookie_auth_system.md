@@ -48,8 +48,8 @@ flowchart TD
 3. User clicks **"Listo, cerrar"** (or the app detects a successful redirect).
 4. Rust backend calls `Webview::cookies_for_url()` (Tauri v2.4.0+) to extract session cookies.
 5. The backend validates the presence of required tokens and calls the platform's internal API (`UsernameFetcher::fetch_profile`) to retrieve the user's **handle** and **avatar URL**.
-6. Cookies are **encrypted** with Windows DPAPI and stored in `app_data/auth/{platform}.cookies.enc`.
-7. `platform_sessions` table is updated with `status = ACTIVE`, mapping the username and avatar to the UI.
+6. Cookies are **encrypted** with Windows DPAPI and stored as a BLOB directly in the SQLite database (`platform_sessions` table).
+7. The table is updated with `status = ACTIVE`, mapping the username and avatar to the UI.
 8. If a download was waiting, it automatically retries.
 
 ### Platform Login URLs
@@ -72,7 +72,7 @@ flowchart TD
 
 ### Encryption
 - **Algorithm:** Windows DPAPI (Data Protection API) — OS-level encryption tied to the user account.
-- **Storage location:** `app_data/system/auth/{platform_id}.cookies.enc`
+- **Storage location:** SQLite database (`platform_sessions.encrypted_cookies`). No physical `.enc` files are used for long-term storage, maximizing transactional safety alongside DB backups.
 - **In-memory only:** Decrypted cookies exist in RAM only during yt-dlp invocation.
 
 ### Temporary Cookie Files

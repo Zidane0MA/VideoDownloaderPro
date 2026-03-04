@@ -178,11 +178,11 @@ erDiagram
 
 | Parent deleted | Child behavior | Files |
 |---|---|---|
-| **Creator soft-deleted** | Posts are **NOT** cascade-deleted. Creator hidden from UI but data preserved. |
-| **Post soft-deleted** | Media entries soft-deleted too. Files moved to `app_data/trash/`. |
-| **Post permanently deleted** | Media entries hard-deleted. Files deleted from disk (if configured). |
-| **Source deleted** | Posts remain (orphaned). `source_id` set to NULL. |
-| **Trash auto-clean** | Posts/media with `deleted_at` older than `trash_auto_clean_days` are permanently removed. |
+| **Creator soft-deleted** | Posts are **NOT** cascade-deleted. Creator hidden from UI but data preserved. | |
+| **Post soft-deleted** | Media entries soft-deleted too. Files remain in original location to avoid heavy I/O operations. | |
+| **Post permanently deleted** | Media entries & **Download Tasks** hard-deleted. Files deleted from disk (if configured). | |
+| **Source deleted** | Posts remain (orphaned). `source_id` set to NULL. | |
+| **Trash auto-clean** | Posts/media with `deleted_at` older than `trash_auto_clean_days` are permanently removed. | |
 
 ---
 

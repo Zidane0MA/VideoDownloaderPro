@@ -203,6 +203,15 @@ export function useDownloadManager() {
     }
   };
 
+  const retryAllFailed = async () => {
+    try {
+      await invoke('retry_all_failed');
+      await fetchQueueStatus();
+    } catch (error) {
+      console.error('Failed to retry all failed:', error);
+    }
+  };
+
   return {
     tasks,
     isQueuePaused,
@@ -214,6 +223,7 @@ export function useDownloadManager() {
     pauseQueue,
     resumeQueue,
     clearHistory,
+    retryAllFailed,
     refreshQueue: fetchQueueStatus,
   };
 }
