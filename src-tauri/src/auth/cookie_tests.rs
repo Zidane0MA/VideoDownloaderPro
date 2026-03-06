@@ -48,7 +48,10 @@ mod tests {
                         // Verbose Debugging: Print all cookies
                         println!("  -> Cookie Dump for {}:", session.platform_id);
                         for line in cookies.lines() {
-                            if line.starts_with('#') || line.trim().is_empty() {
+                            let trimmed = line.trim();
+                            if trimmed.is_empty()
+                                || (trimmed.starts_with('#') && !trimmed.starts_with("#HttpOnly_"))
+                            {
                                 continue;
                             }
                             let parts: Vec<&str> = line.split('\t').collect();

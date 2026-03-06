@@ -83,7 +83,7 @@ impl CookieManager {
         let mut max_expiration: Option<i64> = None;
         for line in cookies_str.lines() {
             let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
+            if line.is_empty() || (line.starts_with('#') && !line.starts_with("#HttpOnly_")) {
                 continue;
             }
             let parts: Vec<&str> = line.split('\t').collect();
@@ -253,8 +253,15 @@ impl CookieManager {
         // Format: domain \t flag \t path \t secure \t expiration \t name \t value
         let cookie_names: Vec<&str> = cookies_str
             .lines()
-            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            .filter(|l| {
+                let trimmed = l.trim();
+                !trimmed.is_empty()
+                    && (!trimmed.starts_with('#') || trimmed.starts_with("#HttpOnly_"))
+            })
             .filter_map(|line| {
+                // For #HttpOnly_ lines, the domain is embedded after the prefix,
+                // but the tab-separated fields remain the same (the #HttpOnly_ is
+                // part of the domain field), so index 5 is still the cookie name.
                 let parts: Vec<&str> = line.split('\t').collect();
                 if parts.len() >= 6 {
                     Some(parts[5]) // Name is at index 5

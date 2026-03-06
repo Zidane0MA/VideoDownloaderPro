@@ -416,16 +416,40 @@ pub async fn open_login_window(
         .map_err(|e| e.to_string())?;
     let auth_data_dir = app_local_data.join("EBWebView_Auth");
 
-    tauri::WebviewWindowBuilder::new(
+    // Use a realistic Chrome User-Agent to avoid bot detection (especially TikTok)
+    let chrome_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+    let webview_window = tauri::WebviewWindowBuilder::new(
         &app_handle,
         &label,
         tauri::WebviewUrl::External(url.parse().unwrap()),
     )
     .title(format!("Login to {}", platform_id))
     .data_directory(auth_data_dir)
-    .inner_size(480.0, 720.0)
+    .user_agent(chrome_ua)
+    .inner_size(1280.0, 800.0)
     .build()
     .map_err(|e| e.to_string())?;
+
+    // Disable WebView2 automation flags that sites use for bot detection
+    #[cfg(target_os = "windows")]
+    {
+        let _ = webview_window.with_webview(|webview| {
+            unsafe {
+                use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings;
+                use windows::core::Interface;
+
+                let webview_obj = webview.controller().CoreWebView2().unwrap();
+                let raw_ptr = Interface::as_raw(&webview_obj);
+                let settings: std::mem::ManuallyDrop<ICoreWebView2Settings> =
+                    std::mem::transmute_copy(&raw_ptr);
+                if let Ok(settings8) = settings.cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings8>() {
+                    // Disable "is browser automated" flag — reduces bot detection
+                    let _ = settings8.SetIsGeneralAutofillEnabled(true.into());
+                }
+            }
+        });
+    }
 
     Ok(())
 }

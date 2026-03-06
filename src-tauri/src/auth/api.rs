@@ -5,6 +5,27 @@ use serde_json::Value;
 pub struct UsernameFetcher;
 
 impl UsernameFetcher {
+    /// Convert Netscape cookie jar text into a `name=value; ...` Cookie header string.
+    /// Handles `#HttpOnly_` prefixed lines correctly (they are valid cookies, not comments).
+    fn netscape_to_cookie_header(cookies: &str) -> String {
+        cookies
+            .lines()
+            .filter(|l| {
+                let t = l.trim();
+                !t.is_empty() && (!t.starts_with('#') || t.starts_with("#HttpOnly_"))
+            })
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.len() >= 7 {
+                    Some(format!("{}={}", parts[5], parts[6]))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<String>>()
+            .join("; ")
+    }
+
     /// Attempts to fetch the TikTok username (unique_id) using the session cookies and Passport API.
     pub async fn fetch_tiktok_username(cookies: &str) -> Option<(String, Option<String>)> {
         let client = Client::builder()
@@ -22,20 +43,7 @@ impl UsernameFetcher {
             HeaderValue::from_static("https://www.tiktok.com/"),
         );
 
-        // Simple Netscape to Cookie header converter
-        let cookie_header_value = cookies
-            .lines()
-            .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >= 7 {
-                    Some(format!("{}={}", parts[5], parts[6]))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<String>>()
-            .join("; ");
+        let cookie_header_value = Self::netscape_to_cookie_header(cookies);
 
         if let Ok(val) = HeaderValue::from_str(&cookie_header_value) {
             headers.insert(COOKIE, val);
@@ -109,20 +117,7 @@ impl UsernameFetcher {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
 
-        // Netscape to Cookie header
-        let cookie_header_value = cookies
-            .lines()
-            .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >= 7 {
-                    Some(format!("{}={}", parts[5], parts[6]))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<String>>()
-            .join("; ");
+        let cookie_header_value = Self::netscape_to_cookie_header(cookies);
 
         if let Ok(val) = HeaderValue::from_str(&cookie_header_value) {
             headers.insert(COOKIE, val);
@@ -189,7 +184,10 @@ impl UsernameFetcher {
         // 1. Extract SAPISID or __Secure-3PAPISID
         let mut sapisid = None;
         for line in cookies.lines() {
-            if line.starts_with('#') || line.trim().is_empty() {
+            let trimmed = line.trim();
+            if trimmed.is_empty()
+                || (trimmed.starts_with('#') && !trimmed.starts_with("#HttpOnly_"))
+            {
                 continue;
             }
             let parts: Vec<&str> = line.split('\t').collect();
@@ -240,20 +238,7 @@ impl UsernameFetcher {
         );
         headers.insert("Content-Type", HeaderValue::from_static("application/json"));
 
-        // Netscape to Cookie header
-        let cookie_header_value = cookies
-            .lines()
-            .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >= 7 {
-                    Some(format!("{}={}", parts[5], parts[6]))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<String>>()
-            .join("; ");
+        let cookie_header_value = Self::netscape_to_cookie_header(cookies);
 
         if let Ok(val) = HeaderValue::from_str(&cookie_header_value) {
             headers.insert(COOKIE, val);
@@ -409,19 +394,7 @@ impl UsernameFetcher {
 
             let mut headers = HeaderMap::new();
             headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
-            let cookie_header_value = cookies
-                .lines()
-                .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
-                .filter_map(|line| {
-                    let parts: Vec<&str> = line.split('\t').collect();
-                    if parts.len() >= 7 {
-                        Some(format!("{}={}", parts[5], parts[6]))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<String>>()
-                .join("; ");
+            let cookie_header_value = Self::netscape_to_cookie_header(cookies);
 
             if let Ok(val) = HeaderValue::from_str(&cookie_header_value) {
                 headers.insert(COOKIE, val);
