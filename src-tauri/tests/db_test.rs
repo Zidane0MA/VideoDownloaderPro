@@ -54,7 +54,7 @@ async fn test_migrations_apply_and_seed_data() {
     let count: i32 = result.try_get_by_index(0).unwrap();
     assert_eq!(count, 4, "Expected 4 seeded platforms, got {}", count);
 
-    // ── Verify settings seed data (14 rows) ───────────────────
+    // ── Verify settings seed data (12 rows) ───────────────────
     let settings_query = Statement::from_string(
         DatabaseBackend::Sqlite,
         "SELECT COUNT(*) FROM settings".to_string(),
@@ -65,7 +65,7 @@ async fn test_migrations_apply_and_seed_data() {
         .expect("Failed to query settings")
         .expect("No result from settings count");
     let count: i32 = result.try_get_by_index(0).unwrap();
-    assert_eq!(count, 14, "Expected 14 default settings, got {}", count);
+    assert_eq!(count, 12, "Expected 12 default settings, got {}", count);
 
     // ── Verify specific platform exists ───────────────────────
     let yt_query = Statement::from_string(
