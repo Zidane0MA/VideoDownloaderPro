@@ -445,7 +445,7 @@ pub async fn open_login_window(
                     std::mem::transmute_copy(&raw_ptr);
                 if let Ok(settings8) = settings.cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings8>() {
                     // Disable "is browser automated" flag — reduces bot detection
-                    let _ = settings8.SetIsGeneralAutofillEnabled(true.into());
+                    let _ = settings8.SetIsGeneralAutofillEnabled(true);
                 }
             }
         });

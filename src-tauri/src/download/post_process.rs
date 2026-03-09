@@ -10,8 +10,8 @@ pub struct ThumbnailResult {
 /// Process thumbnails after a download completes:
 /// - Extract a frame from the video and scale to 300px for the Wall gallery
 pub async fn process_thumbnails(
-    ffmpeg_path: &PathBuf,
-    media_file: &PathBuf,
+    ffmpeg_path: &std::path::Path,
+    media_file: &std::path::Path,
     media_type: &str,
 ) -> ThumbnailResult {
     if media_type == "VIDEO" {
@@ -40,8 +40,8 @@ pub async fn process_thumbnails(
 
 /// Extract a frame from the video at ~3 seconds and save as a 300px thumbnail.
 async fn extract_frame_thumbnail(
-    ffmpeg_path: &PathBuf,
-    video_file: &PathBuf,
+    ffmpeg_path: &std::path::Path,
+    video_file: &std::path::Path,
 ) -> Result<PathBuf, String> {
     let stem = video_file
         .file_stem()

@@ -415,7 +415,7 @@ impl DownloadQueue {
         app: &AppHandle,
         db: &DatabaseConnection,
         task: &download_task::Model,
-        download_dir: &PathBuf,
+        download_dir: &std::path::Path,
         res: &DownloadResult,
     ) {
         if let Some(ref post_id) = task.post_id {
@@ -497,7 +497,7 @@ impl DownloadQueue {
         app: &AppHandle,
         db: &DatabaseConnection,
         task_id: &str,
-        download_dir: &PathBuf,
+        download_dir: &std::path::Path,
         current_retries: i32,
         max_retries: i32,
         err: DownloadError,
@@ -529,10 +529,7 @@ impl DownloadQueue {
             ),
         };
 
-        let total_i64: Option<i64> = match total {
-            Some(v) => Some(v as i64),
-            None => None,
-        };
+        let total_i64: Option<i64> = total.map(|v| v as i64);
 
         if let Err(e) = download_task::Entity::update_many()
             .col_expr(
@@ -570,7 +567,7 @@ impl DownloadQueue {
         app: &AppHandle,
         db: &DatabaseConnection,
         task_id: &str,
-        download_dir: &PathBuf,
+        download_dir: &std::path::Path,
         message: String,
         filename: Option<String>,
     ) {

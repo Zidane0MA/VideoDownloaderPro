@@ -351,9 +351,9 @@ impl UsernameFetcher {
                         "  [DEBUG] YouTube: Successfully extracted account name: {}",
                         name
                     );
-                    return Some((name, avatar));
+                    Some((name, avatar))
                 } else {
-                    return None;
+                    None
                 }
             }
 

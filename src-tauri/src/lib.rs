@@ -97,7 +97,10 @@ pub fn run() {
                 db.clone().into(),
                 app_data_dir.clone(),
             ));
-            let _ = cookie_manager.init(); // Fire and forget init (create temp dir)
+            let cm_clone = cookie_manager.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = cm_clone.init().await; // Fire and forget init (create temp dir)
+            });
             app.manage(cookie_manager);
 
             // Read `concurrent_downloads` from the DB; default to 3 if absent or invalid.
@@ -151,31 +154,30 @@ pub fn run() {
                     }
                     _ => {}
                 })
-                .on_tray_icon_event(|tray, event| match event {
-                    TrayIconEvent::Click {
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         ..
-                    } => {
+                    } = event
+                    {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
                     }
-                    _ => {}
                 })
                 .build(app)?;
 
             Ok(())
         })
-        .on_window_event(|window, event| match event {
-            WindowEvent::CloseRequested { api, .. } => {
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     window.hide().unwrap();
                     api.prevent_close();
                 }
             }
-            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             greet,

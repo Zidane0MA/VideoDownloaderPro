@@ -60,10 +60,8 @@ pub async fn get_sources_command(
         .await
         .unwrap_or_default();
 
-    for id_opt in posts_source_ids {
-        if let Some(id) = id_opt {
-            *count_map.entry(id).or_insert(0) += 1;
-        }
+    for id in posts_source_ids.into_iter().flatten() {
+        *count_map.entry(id).or_insert(0) += 1;
     }
 
     let mut response = Vec::with_capacity(sources.len());

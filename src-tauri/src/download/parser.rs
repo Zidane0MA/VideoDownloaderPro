@@ -22,6 +22,12 @@ pub struct Parser {
     completion_regex: Regex,
 }
 
+impl Default for Parser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Parser {
     pub fn new() -> Self {
         // [download]  45.0% of 10.00MiB at  2.00MiB/s ETA 00:05
@@ -56,11 +62,7 @@ impl Parser {
             let eta = caps.get(4).map(|m| m.as_str().to_string());
 
             let total_bytes = total_size_str.as_ref().and_then(|s| parse_size(s));
-            let downloaded_bytes = if let Some(total) = total_bytes {
-                Some((total as f64 * (progress / 100.0)) as u64)
-            } else {
-                None
-            };
+            let downloaded_bytes = total_bytes.map(|total| (total as f64 * (progress / 100.0)) as u64);
 
             ParseResult::Progress(ProgressUpdate {
                 progress,

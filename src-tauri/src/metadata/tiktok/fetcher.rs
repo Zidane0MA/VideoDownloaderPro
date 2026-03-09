@@ -26,8 +26,8 @@ pub enum TikTokError {
     #[error("Failed to parse API response: {0}")]
     Parse(String),
 
-    #[error("No videos found (profile may be private or section may be empty)")]
-    EmptyResult,
+    #[error("No {section} found. Ensure you are logged in and have videos in this section.")]
+    EmptyResult { section: String },
 }
 
 // ── Section config ─────────────────────────────────────────────────────
@@ -73,6 +73,12 @@ pub struct TikTokFetcher {
     client: reqwest::Client,
 }
 
+impl Default for TikTokFetcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TikTokFetcher {
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
@@ -114,7 +120,9 @@ impl TikTokFetcher {
             .await?;
 
         if items.is_empty() {
-            return Err(TikTokError::EmptyResult);
+            return Err(TikTokError::EmptyResult {
+                section: config.section_label.to_string(),
+            });
         }
 
         tracing::info!(
@@ -278,6 +286,12 @@ impl TikTokFetcher {
             let list_response: TikTokItemListResponse =
                 serde_json::from_str(&text).map_err(|e| TikTokError::Parse(e.to_string()))?;
 
+            // Extract pagination state before consuming item_list by value
+            let has_more = list_response.has_more.unwrap_or(false);
+            let next_cursor = list_response
+                .cursor_string()
+                .unwrap_or_else(|| "0".to_string());
+
             if let Some(items) = list_response.item_list {
                 all_items.extend(items);
             }
@@ -289,12 +303,11 @@ impl TikTokFetcher {
             }
 
             // Check if there are more pages
-            let has_more = list_response.has_more.unwrap_or(false);
             if !has_more {
                 break;
             }
 
-            cursor = list_response.cursor.unwrap_or_else(|| "0".to_string());
+            cursor = next_cursor;
         }
 
         Ok(all_items)

@@ -55,7 +55,9 @@ async fn kill_process_tree(child: &mut tokio::process::Child) {
 
 #[cfg(not(windows))]
 async fn kill_process_tree(child: &mut tokio::process::Child) {
-    let _ = child.kill().await;
+    if let Err(e) = child.kill().await {
+        tracing::error!("Failed to kill process tree: {}", e);
+    }
 }
 
 #[derive(Clone, Serialize, Debug)]
@@ -105,88 +107,85 @@ impl DownloadWorker {
     }
 
     /// Find the newly downloaded media file by comparing the directory state
-    /// before and after the download. Uses `std::fs::read_dir` which on Windows
-    /// calls the native UTF-16 (`W`) API, so it reads ALL Unicode filenames
-    /// correctly — unlike yt-dlp's stdout which is broken for non-ASCII on Windows.
-    fn find_new_media_file(
+    /// before and after the download. Uses `tokio::fs::read_dir` to avoid blocking.
+    async fn find_new_media_file(
         dir: &PathBuf,
         pre_download_files: &HashSet<OsString>,
     ) -> Option<String> {
-        let entries = std::fs::read_dir(dir).ok()?;
+        let mut entries = tokio::fs::read_dir(dir).await.ok()?;
+        let mut new_media = Vec::new();
 
-        let new_media: Vec<_> = entries
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                if pre_download_files.contains(&e.file_name()) {
-                    return false;
-                }
-                let path = e.path();
-                let ext = path
-                    .extension()
-                    .and_then(|x| x.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                MEDIA_EXTENSIONS.contains(&ext.as_str())
-            })
-            .collect();
-
-        // Pick the largest new media file (handles multi-stream merge leaving one final file).
-        new_media
-            .into_iter()
-            .max_by_key(|e| e.metadata().ok().map(|m| m.len()).unwrap_or(0))
-            .map(|e| e.file_name().to_string_lossy().to_string())
-    }
-
-    pub async fn execute_download(
-        &self,
-        task_id: String,
-        url: String,
-        output_dir: PathBuf,
-        format_selection: Option<String>,
-        rate_limit: Option<String>,
-        cancel_token: CancellationToken,
-        db: DatabaseConnection,
-    ) -> Result<DownloadResult, DownloadError> {
-        let binary_path = get_binary_path(&self.app, SidecarBinary::YtDlp).map_err(|e| {
-            DownloadError::Failed {
-                message: e.to_string(),
-                total_bytes: None,
-                downloaded_bytes: 0,
-                filename: None,
+        while let Ok(Some(e)) = entries.next_entry().await {
+            if pre_download_files.contains(&e.file_name()) {
+                continue;
             }
-        })?;
+            let path = e.path();
+            let ext = path
+                .extension()
+                .and_then(|x| x.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if MEDIA_EXTENSIONS.contains(&ext.as_str()) {
+                new_media.push(e);
+            }
+        }
 
-        // --- Auth / Cookie Setup ---
-        // We do this BEFORE metadata fetch because age-gated videos require cookies even for metadata.
-        let cookie_manager = self.app.state::<std::sync::Arc<CookieManager>>();
-        let mut temp_cookie_path: Option<PathBuf> = None;
-        let platform_id = crate::platform::detect_platform(&url);
+        let mut max_len = 0;
+        let mut max_file = None;
 
-        if let Some(pid) = platform_id {
-            match cookie_manager.create_temp_cookie_file(pid).await {
-                Ok(path) => {
-                    if let Some(p) = path {
-                        tracing::info!("Using cookies for platform: {}", pid);
-                        temp_cookie_path = Some(p);
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to create temp cookie file for {}: {}", pid, e);
+        for e in new_media {
+            if let Ok(metadata) = tokio::fs::metadata(e.path()).await {
+                if metadata.len() > max_len {
+                    max_len = metadata.len();
+                    max_file = Some(e.file_name().to_string_lossy().to_string());
                 }
             }
         }
 
-        // --- Metadata Fetch Step ---
-        // Check if task already has a linked Post. If not, fetch and save metadata first.
-        let task = download_task::Entity::find_by_id(&task_id)
-            .one(&db)
+        max_file
+    }
+
+    async fn get_pre_download_files(dir: &PathBuf) -> HashSet<OsString> {
+        let mut pre_download_files = HashSet::new();
+        if let Ok(mut entries) = tokio::fs::read_dir(dir).await {
+            while let Ok(Some(e)) = entries.next_entry().await {
+                pre_download_files.insert(e.file_name());
+            }
+        }
+        pre_download_files
+    }
+
+    async fn prepare_auth_and_metadata(
+        &self,
+        task_id: &str,
+        url: &str,
+        db: &DatabaseConnection,
+    ) -> Result<Option<PathBuf>, DownloadError> {
+        let cookie_manager = self.app.state::<std::sync::Arc<CookieManager>>();
+        let mut temp_cookie_path: Option<PathBuf> = None;
+        let platform_id = crate::platform::detect_platform(url);
+
+        if let Some(pid) = platform_id {
+            match cookie_manager.create_temp_cookie_file(pid).await {
+                Ok(Some(path)) => {
+                    tracing::info!("Using cookies for platform: {}", pid);
+                    temp_cookie_path = Some(path);
+                }
+                Ok(None) => {}
+                Err(e) => tracing::warn!("Failed to create temp cookie file for {}: {}", pid, e),
+            }
+        }
+
+        let task = download_task::Entity::find_by_id(task_id)
+            .one(db)
             .await
             .map_err(|e| {
-                // Try cleanup if we fail early
-                if let Some(_path) = &temp_cookie_path {
-                    // We can't await easily in map_err, but we should try.
-                    // Verify if we can just log here.
-                    tracing::error!("DB error: {}", e);
+                if let Some(path) = &temp_cookie_path {
+                    tracing::error!(
+                        "DB error while having temp cookie {}: {}",
+                        path.display(),
+                        e
+                    );
                 }
                 DownloadError::Failed {
                     message: format!("DB error: {}", e),
@@ -205,46 +204,46 @@ impl DownloadWorker {
         if task.post_id.is_none() {
             tracing::info!("Task {} has no metadata (post_id), fetching...", task_id);
 
-            // Pass the cookie path to fetcher
-            match fetcher::fetch_metadata(&self.app, &url, temp_cookie_path.as_ref()).await {
-                Ok(metadata) => {
-                    match store::save_metadata(&db, metadata).await {
-                        Ok(post_id) => {
-                            tracing::info!(
-                                "Metadata saved for task {}, linked to post {}",
-                                task_id,
-                                post_id
-                            );
-                            // Link post_id to task
-                            let _ = download_task::Entity::update(download_task::ActiveModel {
-                                id: Set(task_id.clone()),
-                                post_id: Set(Some(post_id)),
-                                ..Default::default()
-                            })
-                            .exec(&db)
-                            .await
-                            .map_err(|e| tracing::error!("Failed to update task post_id: {}", e));
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to save metadata for task {}: {}", task_id, e);
-                            // Verify cleanup
-                            if let Some(path) = &temp_cookie_path {
-                                let _ = cookie_manager.cleanup_temp_file(path).await;
-                            }
-                            return Err(DownloadError::Failed {
-                                message: format!("Metadata save error: {}", e),
-                                total_bytes: None,
-                                downloaded_bytes: 0,
-                                filename: None,
-                            });
+            match fetcher::fetch_metadata(&self.app, url, temp_cookie_path.as_ref()).await {
+                Ok(metadata) => match store::save_metadata(db, metadata).await {
+                    Ok(post_id) => {
+                        tracing::info!(
+                            "Metadata saved for task {}, linked to post {}",
+                            task_id,
+                            post_id
+                        );
+                        if let Err(e) = download_task::Entity::update(download_task::ActiveModel {
+                            id: Set(task_id.to_string()),
+                            post_id: Set(Some(post_id)),
+                            ..Default::default()
+                        })
+                        .exec(db)
+                        .await
+                        {
+                            tracing::error!("Failed to update task post_id: {}", e);
                         }
                     }
-                }
+                    Err(e) => {
+                        tracing::error!("Failed to save metadata for task {}: {}", task_id, e);
+                        if let Some(path) = &temp_cookie_path {
+                            if let Err(e) = cookie_manager.cleanup_temp_file(path).await {
+                                tracing::warn!("Failed to cleanup temp cookie file: {}", e);
+                            }
+                        }
+                        return Err(DownloadError::Failed {
+                            message: format!("Metadata save error: {}", e),
+                            total_bytes: None,
+                            downloaded_bytes: 0,
+                            filename: None,
+                        });
+                    }
+                },
                 Err(e) => {
                     tracing::error!("Failed to fetch metadata for task {}: {}", task_id, e);
-                    // Verify cleanup
                     if let Some(path) = &temp_cookie_path {
-                        let _ = cookie_manager.cleanup_temp_file(path).await;
+                        if let Err(e) = cookie_manager.cleanup_temp_file(path).await {
+                            tracing::warn!("Failed to cleanup temp cookie file: {}", e);
+                        }
                     }
                     return Err(DownloadError::Failed {
                         message: format!("Metadata fetch error: {}", e),
@@ -255,6 +254,26 @@ impl DownloadWorker {
                 }
             }
         }
+
+        Ok(temp_cookie_path)
+    }
+
+    fn build_yt_dlp_command(
+        &self,
+        url: &str,
+        output_dir: &PathBuf,
+        format_selection: Option<&String>,
+        rate_limit: Option<&String>,
+        temp_cookie_path: Option<&PathBuf>,
+    ) -> Result<Command, DownloadError> {
+        let binary_path = get_binary_path(&self.app, SidecarBinary::YtDlp).map_err(|e| {
+            DownloadError::Failed {
+                message: e.to_string(),
+                total_bytes: None,
+                downloaded_bytes: 0,
+                filename: None,
+            }
+        })?;
 
         let mut cmd = Command::new(binary_path);
         cmd.env("PYTHONIOENCODING", "utf-8");
@@ -269,19 +288,15 @@ impl DownloadWorker {
             })?;
         let deno_arg = format!("deno:{}", deno_path.to_string_lossy());
 
-        // --newline is CRITICAL for line-by-line progress parsing
-        // -c enables resume of partial downloads (for pause/resume support)
         cmd.arg("--newline")
             .arg("--no-playlist")
             .arg("-c")
             .arg("-P")
-            .arg(&output_dir)
+            .arg(output_dir)
             .arg("--output")
-            .arg("%(title)s.%(ext)s")
-            // Apply rate limit if configured
-            ;
+            .arg("%(title)s.%(ext)s");
 
-        if let Some(limit) = &rate_limit {
+        if let Some(limit) = rate_limit {
             if !limit.trim().is_empty() {
                 cmd.arg("--limit-rate").arg(limit.trim());
             }
@@ -289,33 +304,25 @@ impl DownloadWorker {
 
         cmd.arg("--js-runtimes").arg(deno_arg);
 
-        // Inject cookies if available
-        if let Some(ref cookie_path) = temp_cookie_path {
+        if let Some(cookie_path) = temp_cookie_path {
             cmd.arg("--cookies").arg(cookie_path);
         }
 
-        // Apply format selection — try to parse as JSON DownloadOptions first,
-        // fall back to plain string for backward compatibility.
-        if let Some(ref fmt_str) = format_selection {
+        if let Some(fmt_str) = format_selection {
             if let Ok(opts) = serde_json::from_str::<DownloadOptions>(fmt_str) {
-                // --- Structured DownloadOptions ---
-
                 if opts.audio_only {
-                    // Audio-only extraction
                     cmd.arg("-f").arg("bestaudio");
                     cmd.arg("--extract-audio");
                     if let Some(ref audio_fmt) = opts.audio_extract_format {
                         cmd.arg("--audio-format").arg(audio_fmt);
                     }
                 } else {
-                    // Video format selection
                     let video_part = opts.format_id.as_deref().unwrap_or("bestvideo");
                     let audio_part = opts.audio_format_id.as_deref().unwrap_or("bestaudio");
                     let format_string = format!("{}+{}/best", video_part, audio_part);
                     cmd.arg("-f").arg(&format_string);
                 }
 
-                // Subtitle options
                 if !opts.subtitle_langs.is_empty() {
                     cmd.arg("--write-subs");
                     cmd.arg("--sub-langs").arg(opts.subtitle_langs.join(","));
@@ -326,19 +333,16 @@ impl DownloadWorker {
                     }
                 }
 
-                // Container override
                 if let Some(ref container) = opts.container {
                     cmd.arg("--merge-output-format").arg(container);
                 }
             } else {
-                // --- Plain string fallback (legacy) ---
                 cmd.arg("-f").arg(fmt_str);
             }
         }
 
-        cmd.arg(&url);
+        cmd.arg(url);
 
-        // Windows: hide console window
         #[cfg(windows)]
         {
             const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -348,76 +352,39 @@ impl DownloadWorker {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
-        // --- Snapshot directory BEFORE download ---
-        // After yt-dlp finishes, we compare to find the new media file.
-        // This avoids relying on yt-dlp's stdout (broken encoding on Windows).
-        let pre_download_files: HashSet<OsString> = std::fs::read_dir(&output_dir)
-            .map(|entries| {
-                entries
-                    .filter_map(|e| e.ok())
-                    .map(|e| e.file_name())
-                    .collect()
-            })
-            .unwrap_or_default();
+        Ok(cmd)
+    }
 
-        let mut child = cmd.spawn().map_err(|e| DownloadError::Failed {
-            message: format!("Failed to spawn yt-dlp: {}", e),
-            total_bytes: None,
-            downloaded_bytes: 0,
-            filename: None,
-        })?;
-
-        let stdout = child.stdout.take().ok_or(DownloadError::Failed {
+    async fn handle_progress_updates(
+        &self,
+        task_id: String,
+        mut child: tokio::process::Child,
+        cancel_token: CancellationToken,
+        db: DatabaseConnection,
+    ) -> Result<(tokio::process::Child, Option<u64>, u64, bool), DownloadError> {
+        let stdout = child.stdout.take().ok_or_else(|| DownloadError::Failed {
             message: "Failed to open stdout".to_string(),
             total_bytes: None,
             downloaded_bytes: 0,
             filename: None,
         })?;
-        let stderr = child.stderr.take().ok_or(DownloadError::Failed {
-            message: "Failed to open stderr".to_string(),
-            total_bytes: None,
-            downloaded_bytes: 0,
-            filename: None,
-        })?;
 
-        // --- Stderr capture task ---
-        let stderr_lines = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
-        let stderr_lines_clone = stderr_lines.clone();
-        let stderr_handle = tokio::spawn(async move {
-            let mut reader = BufReader::new(stderr);
-            let mut buf = Vec::new();
-            while let Ok(n) = reader.read_until(b'\n', &mut buf).await {
-                if n == 0 {
-                    break;
-                }
-                let line = String::from_utf8_lossy(&buf);
-                let trimmed = line.trim().to_string();
-                if !trimmed.is_empty() {
-                    tracing::warn!(target: "yt-dlp:stderr", "{}", trimmed);
-                    stderr_lines_clone.lock().await.push(trimmed);
-                }
-                buf.clear();
-            }
-        });
-
-        // --- Stdout progress reading with cancellation ---
         let mut reader = BufReader::new(stdout);
         let mut buf = Vec::new();
         let parser = Parser::new();
         let mut last_emit = Instant::now();
 
-        // Create explicit variables to track stats across the loop
         let mut final_total_bytes = None;
         let mut final_downloaded_bytes = 0;
         let mut was_killed = false;
 
         let read_result: Result<(), DownloadError> = loop {
-            // Check cancellation BEFORE entering select! to guarantee
-            // cancel wins even if read_until already returned data.
             if cancel_token.is_cancelled() {
                 tracing::info!("Download cancelled for task: {}", task_id);
                 kill_process_tree(&mut child).await;
-                let _ = child.wait().await; // Reap process to avoid zombies on Windows
+                if let Err(e) = child.wait().await {
+                    tracing::warn!("Failed to wait for killed child: {}", e);
+                }
                 was_killed = true;
                 break Err(DownloadError::Cancelled {
                     total_bytes: final_total_bytes,
@@ -427,13 +394,13 @@ impl DownloadWorker {
             }
 
             tokio::select! {
-                biased; // Prefer cancellation over read_until
-
-                // Cancellation branch
+                biased;
                 _ = cancel_token.cancelled() => {
                     tracing::info!("Download cancelled for task: {}", task_id);
                     kill_process_tree(&mut child).await;
-                    let _ = child.wait().await;
+                    if let Err(e) = child.wait().await {
+                        tracing::warn!("Failed to wait for killed child: {}", e);
+                    }
                     was_killed = true;
                     break Err(DownloadError::Cancelled {
                         total_bytes: final_total_bytes,
@@ -441,18 +408,15 @@ impl DownloadWorker {
                         filename: None,
                     });
                 }
-                // Read next line (using read_until for robust UTF-8 handling)
                 result = reader.read_until(b'\n', &mut buf) => {
                     match result {
-                        Ok(0) => break Ok(()), // EOF
+                        Ok(0) => break Ok(()),
                         Ok(_) => {
                             let line = String::from_utf8_lossy(&buf);
-                            // Import ParseResult
                             use super::parser::ParseResult;
 
                             match parser.parse_line(&line) {
                                 ParseResult::Progress(progress) => {
-                                    // Update final stats (accumulate if present)
                                     if let Some(bytes) = progress.total_bytes {
                                         final_total_bytes = Some(bytes);
                                     }
@@ -472,13 +436,13 @@ impl DownloadWorker {
                                             speed: progress.speed.clone().unwrap_or_default(),
                                             eta: progress.eta.clone().unwrap_or_default(),
                                             downloaded_bytes: final_downloaded_bytes,
-                                            total_bytes: final_total_bytes, // Use accumulated value
+                                            total_bytes: final_total_bytes,
                                         };
 
-                                        let _ = self.app.emit("download-progress", &payload);
+                                        if let Err(e) = self.app.emit("download-progress", &payload) {
+                                            tracing::error!("Failed to emit download progress: {}", e);
+                                        }
 
-                                        // Persist progress to DB (throttled)
-                                        // Use update_many to avoid implicit SELECT after UPDATE
                                         let mut update = download_task::Entity::update_many()
                                             .col_expr(
                                                 download_task::Column::Progress,
@@ -493,8 +457,6 @@ impl DownloadWorker {
                                                 sea_orm::sea_query::Expr::value(progress.eta.clone()),
                                             );
 
-                                        // Only update downloaded_bytes if we have a valid value
-                                        // (parser returns None if total_bytes is unknown, but we might track it manually)
                                         if progress.downloaded_bytes.is_some() {
                                             update = update.col_expr(
                                                 download_task::Column::DownloadedBytes,
@@ -502,8 +464,6 @@ impl DownloadWorker {
                                             );
                                         }
 
-                                        // Only update total_bytes if we have a new value.
-                                        // This prevents overwriting a known size with NULL if yt-dlp sends an update without size.
                                         if let Some(total) = progress.total_bytes {
                                             update = update.col_expr(
                                                 download_task::Column::TotalBytes,
@@ -511,10 +471,13 @@ impl DownloadWorker {
                                             );
                                         }
 
-                                        let _ = update
+                                        if let Err(e) = update
                                             .filter(download_task::Column::Id.eq(task_id.clone()))
                                             .exec(&db)
-                                            .await;
+                                            .await
+                                        {
+                                            tracing::error!("Failed to update DB progress: {}", e);
+                                        }
                                     }
                                 }
                                 ParseResult::Ignore => {}
@@ -532,37 +495,97 @@ impl DownloadWorker {
             }
         };
 
-        // Wait for stderr task to finish
-        let _ = stderr_handle.await;
-
-        // If the read loop errored (cancelled or IO error), propagate it
         read_result?;
+        Ok((child, final_total_bytes, final_downloaded_bytes, was_killed))
+    }
 
-        // Wait for process to finish (skip if already killed & waited)
-        let status = if was_killed {
-            // Process already reaped in the kill path
+    #[allow(clippy::too_many_arguments)]
+    pub async fn execute_download(
+        &self,
+        task_id: String,
+        url: String,
+        output_dir: PathBuf,
+        format_selection: Option<String>,
+        rate_limit: Option<String>,
+        cancel_token: CancellationToken,
+        db: DatabaseConnection,
+    ) -> Result<DownloadResult, DownloadError> {
+        let temp_cookie_path = self.prepare_auth_and_metadata(&task_id, &url, &db).await?;
+
+        let mut cmd = self.build_yt_dlp_command(
+            &url,
+            &output_dir,
+            format_selection.as_ref(),
+            rate_limit.as_ref(),
+            temp_cookie_path.as_ref(),
+        )?;
+
+        let pre_download_files = Self::get_pre_download_files(&output_dir).await;
+
+        let mut child = cmd.spawn().map_err(|e| DownloadError::Failed {
+            message: format!("Failed to spawn yt-dlp: {}", e),
+            total_bytes: None,
+            downloaded_bytes: 0,
+            filename: None,
+        })?;
+
+        let stderr = child.stderr.take().ok_or_else(|| DownloadError::Failed {
+            message: "Failed to open stderr".to_string(),
+            total_bytes: None,
+            downloaded_bytes: 0,
+            filename: None,
+        })?;
+
+        let stderr_lines = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
+        let stderr_lines_clone = stderr_lines.clone();
+        let stderr_handle = tokio::spawn(async move {
+            let mut reader = BufReader::new(stderr);
+            let mut buf = Vec::new();
+            while let Ok(n) = reader.read_until(b'\n', &mut buf).await {
+                if n == 0 {
+                    break;
+                }
+                let line = String::from_utf8_lossy(&buf);
+                let trimmed = line.trim().to_string();
+                if !trimmed.is_empty() {
+                    tracing::warn!(target: "yt-dlp:stderr", "{}", trimmed);
+                    stderr_lines_clone.lock().await.push(trimmed);
+                }
+                buf.clear();
+            }
+        });
+
+        let progress_result = self
+            .handle_progress_updates(task_id.clone(), child, cancel_token, db)
+            .await;
+
+        if let Err(e) = stderr_handle.await {
+            tracing::warn!("Stderr task failed: {}", e);
+        }
+
+        let (mut final_child, final_total_bytes, final_downloaded_bytes, was_killed) =
+            progress_result?;
+
+        if was_killed {
             return Err(DownloadError::Cancelled {
                 total_bytes: final_total_bytes,
                 downloaded_bytes: final_downloaded_bytes,
                 filename: None,
             });
-        } else {
-            child.wait().await.map_err(|e| DownloadError::Failed {
+        }
+
+        let status = final_child
+            .wait()
+            .await
+            .map_err(|e| DownloadError::Failed {
                 message: e.to_string(),
                 total_bytes: final_total_bytes,
                 downloaded_bytes: final_downloaded_bytes,
                 filename: None,
-            })?
-        };
+            })?;
 
         let result = if status.success() {
-            // --- Filesystem-based filename detection ---
-            // yt-dlp's stdout on Windows uses cp1252 encoding (PyInstaller frozen binary
-            // ignores PYTHONIOENCODING/PYTHONUTF8). Parsing filenames from stdout corrupts
-            // non-ASCII characters (ó→�, シ→dropped). Instead, we compare the directory
-            // listing before/after to find the new media file. Rust's std::fs uses the
-            // native Windows UTF-16 (W) API, so ALL Unicode filenames are read correctly.
-            let result_filename = Self::find_new_media_file(&output_dir, &pre_download_files);
+            let result_filename = Self::find_new_media_file(&output_dir, &pre_download_files).await;
 
             if result_filename.is_none() {
                 tracing::warn!("Could not identify downloaded file via filesystem scan");
@@ -570,21 +593,20 @@ impl DownloadWorker {
                 tracing::info!("Downloaded file (fs scan): {:?}", result_filename);
             }
 
-            // Read ACTUAL file size from disk
-            let actual_file_size = result_filename.as_ref().and_then(|fname| {
+            let mut actual_file_size = None;
+            if let Some(ref fname) = result_filename {
                 let file_path = output_dir.join(fname);
-                match std::fs::metadata(&file_path) {
+                match tokio::fs::metadata(&file_path).await {
                     Ok(m) => {
                         let size = m.len();
                         tracing::info!("Actual file size on disk: {} bytes", size);
-                        Some(size)
+                        actual_file_size = Some(size);
                     }
                     Err(e) => {
                         tracing::warn!("Could not read file metadata: {}", e);
-                        None
                     }
                 }
-            });
+            }
 
             let total = actual_file_size.unwrap_or(0);
 
@@ -594,12 +616,10 @@ impl DownloadWorker {
                 filename: result_filename,
             })
         } else {
-            // Build error message from stderr
             let stderr_output = stderr_lines.lock().await;
             let error_detail = if stderr_output.is_empty() {
                 format!("yt-dlp exited with status: {}", status)
             } else {
-                // Take last 5 lines for a concise error
                 let tail: Vec<&str> = stderr_output
                     .iter()
                     .rev()
@@ -619,9 +639,11 @@ impl DownloadWorker {
             })
         };
 
-        // Cleanup temp cookie file
         if let Some(path) = temp_cookie_path {
-            let _ = cookie_manager.cleanup_temp_file(&path).await;
+            let cookie_manager = self.app.state::<std::sync::Arc<CookieManager>>();
+            if let Err(e) = cookie_manager.cleanup_temp_file(&path).await {
+                tracing::warn!("Failed to cleanup temp cookie file: {}", e);
+            }
         }
 
         result

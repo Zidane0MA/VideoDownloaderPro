@@ -15,7 +15,7 @@ pub enum EncryptionError {
 }
 
 pub fn encrypt_string(data: &str) -> Result<Vec<u8>, EncryptionError> {
-    let mut data_blob = CRYPT_INTEGER_BLOB {
+    let data_blob = CRYPT_INTEGER_BLOB {
         cbData: data.len() as u32,
         pbData: data.as_ptr() as *mut u8,
     };
@@ -24,7 +24,7 @@ pub fn encrypt_string(data: &str) -> Result<Vec<u8>, EncryptionError> {
 
     unsafe {
         CryptProtectData(
-            &mut data_blob,
+            &data_blob,
             None,
             None,
             None,
@@ -48,7 +48,7 @@ pub fn encrypt_string(data: &str) -> Result<Vec<u8>, EncryptionError> {
 }
 
 pub fn decrypt_string(data: &[u8]) -> Result<String, EncryptionError> {
-    let mut data_blob = CRYPT_INTEGER_BLOB {
+    let data_blob = CRYPT_INTEGER_BLOB {
         cbData: data.len() as u32,
         pbData: data.as_ptr() as *mut u8,
     };
@@ -57,7 +57,7 @@ pub fn decrypt_string(data: &[u8]) -> Result<String, EncryptionError> {
 
     unsafe {
         CryptUnprotectData(
-            &mut data_blob,
+            &data_blob,
             None,
             None,
             None,
