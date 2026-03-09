@@ -5,13 +5,17 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::auth::cookie_manager::CookieManager;
-use crate::entity::{download_task, post};
+use crate::entity::{download_task, post, source};
 use crate::metadata::fetcher;
 use crate::metadata::format_processor::{self, ProcessedMetadata};
 use crate::metadata::models::{YtDlpOutput, YtDlpVideo};
 use crate::queue::DownloadQueue;
 use crate::AppState;
+use std::collections::HashMap;
 use std::sync::Arc;
+
+const MANUAL_TASK_PRIORITY: i32 = 10;
+const MANUAL_TASK_MAX_RETRIES: i32 = 3;
 
 #[derive(serde::Deserialize)]
 pub struct CreateDownloadTaskRequest {
@@ -38,20 +42,23 @@ pub struct DownloadTaskInfo {
     pub total_bytes: Option<i64>,
     pub title: Option<String>,
     pub thumbnail: Option<String>,
+    /// Playlist source id (if this task belongs to a playlist).
+    pub source_id: Option<String>,
+    /// Playlist source name (if this task belongs to a playlist).
+    pub source_name: Option<String>,
 }
 
 impl DownloadTaskInfo {
-    fn new(m: download_task::Model, p: Option<post::Model>) -> Self {
-        let (title, thumbnail) = if let Some(post) = p {
-            let title = post.title;
-            // Extract thumbnail from raw_json if available
-            let thumbnail = post.raw_json.and_then(|json| {
-                let video: Result<YtDlpVideo, _> = serde_json::from_str(&json);
+    fn new(m: download_task::Model, p: Option<post::Model>, source_name: Option<String>) -> Self {
+        let (title, thumbnail, source_id) = if let Some(ref post) = p {
+            let title = post.title.clone();
+            let thumbnail = post.raw_json.as_ref().and_then(|json| {
+                let video: Result<YtDlpVideo, _> = serde_json::from_str(json);
                 video.ok().and_then(|v| v.best_thumbnail())
             });
-            (title, thumbnail)
+            (title, thumbnail, post.source_id.clone())
         } else {
-            (None, None)
+            (None, None, None)
         };
 
         Self {
@@ -72,6 +79,8 @@ impl DownloadTaskInfo {
             total_bytes: m.total_bytes,
             title,
             thumbnail,
+            source_id,
+            source_name,
         }
     }
 }
@@ -89,10 +98,10 @@ pub async fn create_download_task(
         id: Set(task_id.clone()),
         url: Set(request.url.clone()),
         status: Set("QUEUED".to_string()),
-        priority: Set(10), // Default high priority for manual
+        priority: Set(MANUAL_TASK_PRIORITY), // Default high priority for manual
         progress: Set(0.0),
         retries: Set(0),
-        max_retries: Set(3),
+        max_retries: Set(MANUAL_TASK_MAX_RETRIES),
         format_selection: Set(request.format_selection),
         created_at: Set(Utc::now()),
         ..Default::default()
@@ -122,7 +131,7 @@ pub async fn cancel_download_task(
 
     if !was_running {
         // Task may be QUEUED but not yet picked up — mark it directly
-        let _ = download_task::Entity::update(download_task::ActiveModel {
+        download_task::Entity::update(download_task::ActiveModel {
             id: Set(task_id.clone()),
             status: Set("CANCELLED".to_string()),
             ..Default::default()
@@ -157,7 +166,7 @@ pub async fn retry_download_task(
     }
 
     // Reset task
-    let _ = download_task::Entity::update(download_task::ActiveModel {
+    download_task::Entity::update(download_task::ActiveModel {
         id: Set(task_id.clone()),
         status: Set("QUEUED".to_string()),
         retries: Set(0),
@@ -192,12 +201,43 @@ pub async fn get_queue_status(
         .await
         .map_err(|e| format!("Database error: {}", e))?;
 
+    // Collect unique source_ids so we can batch-load source names.
+    let source_ids: Vec<String> = tasks_with_posts
+        .iter()
+        .filter_map(|(_, post)| post.as_ref()?.source_id.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    // Batch-load source names into a lookup map.
+    let source_name_map: HashMap<String, String> = if source_ids.is_empty() {
+        HashMap::new()
+    } else {
+        source::Entity::find()
+            .filter(source::Column::Id.is_in(source_ids))
+            .all(&state.db)
+            .await
+            .map_err(|e| format!("Database error: {}", e))?
+            .into_iter()
+            .map(|s| (s.id, s.name))
+            .collect()
+    };
+
+    let tasks = tasks_with_posts
+        .into_iter()
+        .map(|(task, post)| {
+            let sname = post
+                .as_ref()
+                .and_then(|p| p.source_id.as_ref())
+                .and_then(|sid| source_name_map.get(sid))
+                .cloned();
+            DownloadTaskInfo::new(task, post, sname)
+        })
+        .collect();
+
     Ok(QueueStatusResponse {
         is_paused: queue.is_paused(),
-        tasks: tasks_with_posts
-            .into_iter()
-            .map(|(task, post)| DownloadTaskInfo::new(task, post))
-            .collect(),
+        tasks,
     })
 }
 
@@ -223,19 +263,22 @@ pub async fn pause_download_task(
         "PROCESSING" => {
             // Update DB first to avoid race condition where manager sees "PROCESSING"
             // and marks it as CANCELLED
-            let _ = download_task::Entity::update(download_task::ActiveModel {
+            if let Err(e) = download_task::Entity::update(download_task::ActiveModel {
                 id: Set(task_id.clone()),
                 status: Set("PAUSED".to_string()),
                 ..Default::default()
             })
             .exec(&state.db)
-            .await;
+            .await
+            {
+                tracing::error!("Failed to mark task {} as PAUSED in DB: {}", task_id, e);
+            }
 
             // Then cancel the running worker
             queue.cancel_task(&task_id).await;
         }
         "QUEUED" => {
-            let _ = download_task::Entity::update(download_task::ActiveModel {
+            download_task::Entity::update(download_task::ActiveModel {
                 id: Set(task_id.clone()),
                 status: Set("PAUSED".to_string()),
                 ..Default::default()
@@ -276,7 +319,7 @@ pub async fn resume_download_task(
     }
 
     // Reset to QUEUED — yt-dlp's -c flag will resume partial downloads
-    let _ = download_task::Entity::update(download_task::ActiveModel {
+    download_task::Entity::update(download_task::ActiveModel {
         id: Set(task_id.clone()),
         status: Set("QUEUED".to_string()),
         error_message: Set(None),
@@ -336,7 +379,9 @@ pub async fn fetch_metadata_command(
 
     // Cleanup cookies
     if let Some(path) = temp_cookie_path {
-        let _ = cookie_manager.cleanup_temp_file(&path).await;
+        if let Err(e) = cookie_manager.cleanup_temp_file(&path).await {
+            tracing::warn!("Failed to cleanup cookies: {}", e);
+        }
     }
 
     let raw_output = raw_output?;
@@ -346,20 +391,7 @@ pub async fn fetch_metadata_command(
         YtDlpOutput::Video(ref video) | YtDlpOutput::VideoFallback(ref video) => {
             Ok(format_processor::process_metadata(video))
         }
-        YtDlpOutput::Playlist(ref playlist) => {
-            // For playlists, return minimal metadata so frontend shows fallback mode
-            Ok(ProcessedMetadata {
-                id: playlist.id.clone(),
-                title: playlist.title.clone(),
-                uploader: playlist.uploader.clone(),
-                duration: None,
-                thumbnail_url: None,
-                video_qualities: vec![],
-                audio_tracks: vec![],
-                subtitle_tracks: vec![],
-                is_playlist: true,
-            })
-        }
+        YtDlpOutput::Playlist(ref playlist) => Ok(format_processor::process_playlist(playlist)),
     }
 }
 

@@ -1,14 +1,15 @@
-//! Internal deserialization structs for TikTok's favorite item_list API.
+//! Internal deserialization structs for TikTok's item list APIs.
 //! These map the raw JSON into intermediate types that get converted to `YtDlpVideo`.
 
 #![allow(dead_code)]
 
 use serde::Deserialize;
 
-/// Top-level response from `/api/favorite/item_list/`
+/// Top-level response from TikTok item list endpoints
+/// (e.g. `/api/favorite/item_list/`, `/api/bookmark/item_list/`).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct TikTokFavResponse {
+pub(crate) struct TikTokItemListResponse {
     pub item_list: Option<Vec<TikTokItem>>,
     pub cursor: Option<String>,
     pub has_more: Option<bool>,
@@ -99,7 +100,7 @@ mod tests {
             "statusCode": 0
         }"#;
 
-        let resp: TikTokFavResponse = serde_json::from_str(json).unwrap();
+        let resp: TikTokItemListResponse = serde_json::from_str(json).unwrap();
         assert!(resp.has_more.unwrap());
         assert_eq!(resp.cursor.as_deref(), Some("30"));
 
@@ -127,7 +128,7 @@ mod tests {
             "cursor": "0"
         }"#;
 
-        let resp: TikTokFavResponse = serde_json::from_str(json).unwrap();
+        let resp: TikTokItemListResponse = serde_json::from_str(json).unwrap();
         assert!(resp.item_list.is_none());
         assert!(!resp.has_more.unwrap());
     }

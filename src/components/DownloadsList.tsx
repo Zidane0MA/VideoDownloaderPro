@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useDownloadManager } from '../hooks/useDownloadManager';
 import { DownloadItem } from './DownloadItem';
+import { PlaylistGroup } from './PlaylistGroup';
 import { DownloadStatus } from '../types/download';
+import type { DownloadTask } from '../types/download';
 import { DownloadCloud, Play, Pause, History, Download, Trash2, RotateCw } from 'lucide-react';
-import { Virtuoso } from 'react-virtuoso';
 
 export const DownloadsList: React.FC = () => {
   const { tasks, isQueuePaused, pauseQueue, resumeQueue, clearHistory, retryAllFailed } = useDownloadManager();
@@ -114,15 +115,7 @@ export const DownloadsList: React.FC = () => {
       {/* List Container */}
       <div className="min-h-[400px] relative">
         {currentTasks.length > 0 ? (
-          <Virtuoso
-            useWindowScroll
-            data={currentTasks}
-            itemContent={(_, task) => (
-              <div className="pb-3 px-0.5">
-                <DownloadItem task={task} />
-              </div>
-            )}
-          />
+          <GroupedTaskList tasks={currentTasks} />
         ) : (
           <div className="absolute inset-x-0 flex flex-col items-center justify-center p-16 border border-dashed border-surface-700/70 rounded-2xl bg-surface-800/30 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div className="p-5 bg-surface-900/80 rounded-full mb-4 border border-surface-700/50 shadow-inner">
@@ -141,6 +134,66 @@ export const DownloadsList: React.FC = () => {
           </div>
         )}
       </div>
+    </div>
+  );
+};
+
+// ─── Grouped Rendering ──────────────────────────────────────────────────────
+
+interface GroupedTaskListProps {
+  tasks: DownloadTask[];
+}
+
+/**
+ * Separates standalone downloads from playlist-grouped ones.
+ * Tasks with a `source_id` are grouped into a collapsible `PlaylistGroup`.
+ * Tasks without a `source_id` are rendered individually.
+ */
+const GroupedTaskList: React.FC<GroupedTaskListProps> = ({ tasks }) => {
+  const { standaloneTasks, groups } = useMemo(() => {
+    const standalone: DownloadTask[] = [];
+    const groupMap = new Map<string, { name: string; tasks: DownloadTask[] }>();
+
+    for (const task of tasks) {
+      if (task.source_id && task.source_name) {
+        const existing = groupMap.get(task.source_id);
+        if (existing) {
+          existing.tasks.push(task);
+        } else {
+          groupMap.set(task.source_id, {
+            name: task.source_name,
+            tasks: [task],
+          });
+        }
+      } else {
+        standalone.push(task);
+      }
+    }
+
+    return {
+      standaloneTasks: standalone,
+      groups: Array.from(groupMap.entries()),
+    };
+  }, [tasks]);
+
+  return (
+    <div className="space-y-3">
+      {/* Playlist Groups */}
+      {groups.map(([sourceId, group]) => (
+        <PlaylistGroup
+          key={sourceId}
+          sourceId={sourceId}
+          sourceName={group.name}
+          tasks={group.tasks}
+        />
+      ))}
+
+      {/* Standalone Downloads */}
+      {standaloneTasks.map(task => (
+        <div key={task.id} className="px-0.5">
+          <DownloadItem task={task} />
+        </div>
+      ))}
     </div>
   );
 };

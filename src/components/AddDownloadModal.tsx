@@ -3,7 +3,7 @@ import { useDownloadManager } from '../hooks/useDownloadManager';
 import {
   X, Download, Loader2, Search, Image as ImageIcon,
   ChevronDown, ChevronUp, Music, Subtitles, Film,
-  Check, Clock, ListVideo
+  Clock, ListVideo, Settings2, Repeat, LayoutGrid, Check
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import type {
@@ -41,6 +41,11 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
   const [fallbackMode, setFallbackMode] = useState(false);
   const [simpleFormat, setSimpleFormat] = useState('best');
 
+  // Source Configuration state
+  const [limitMode, setLimitMode] = useState<'all' | 'custom'>('all');
+  const [maxItems, setMaxItems] = useState<number>(50);
+  const [keepActive, setKeepActive] = useState<boolean>(false);
+
   if (!isOpen) return null;
 
   const handleClose = () => {
@@ -54,8 +59,10 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
     setAudioOnly(false);
     setAudioExtractFormat('mp3');
     setShowAdvanced(false);
-    setError(null);
     setFallbackMode(false);
+    setLimitMode('all');
+    setMaxItems(50);
+    setKeepActive(false);
     onClose();
   };
 
@@ -99,10 +106,18 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
     setIsSubmitting(true);
     setError(null);
 
-    // If it's a playlist, we send it to `add_source_command`
+    // If it's a playlist, send the new configuration to `add_source_command`
     if (metadata?.is_playlist) {
       try {
-        await invoke('add_source_command', { url });
+        const selectedIds = undefined; // For backend backwards-compatibility we pass absent or null
+        await invoke('add_source_command', {
+          url,
+          selectedIds,
+          // Note: Backend signature hasn't been updated for these yet, but future PR will read them:
+          // sourceType,
+          // maxItems: limitMode === 'all' ? null : maxItems,
+          // syncMode
+        });
         handleClose();
       } catch (err) {
         setError('Failed to add playlist source. ' + err);
@@ -295,15 +310,100 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
                 </div>
               </div>
 
-              {/* ── Playlist Notice OR Video Options ── */}
+              {/* ── Source Configuration ── */}
               {metadata.is_playlist ? (
-                <div className="p-4 bg-brand-500/10 border border-brand-500/20 rounded-lg flex items-start gap-3 mt-4">
-                  <ListVideo className="text-brand-400 mt-0.5" size={20} />
-                  <div>
-                    <h4 className="text-sm font-medium text-brand-300">Playlist Detected</h4>
-                    <p className="text-xs text-brand-400/80 mt-1">
-                      This will be added as a Source. All contained videos will be automatically queued for download.
-                    </p>
+                <div className="space-y-4">
+                  {/* Notice */}
+                  <div className="p-4 bg-brand-500/10 border border-brand-500/20 rounded-lg flex items-start gap-3">
+                    <LayoutGrid className="text-brand-400 mt-0.5" size={20} />
+                    <div className="flex-1">
+                      <h4 className="text-sm font-medium text-brand-300">New Source Detected</h4>
+                      <p className="text-xs text-brand-400/80 mt-1 leading-relaxed">
+                        Configure how this collection should be processed. Added sources can be managed from your backend settings.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Auto-detected Source Info */}
+                  <div className="bg-surface-900 border border-surface-700/50 p-4 rounded-lg flex items-start gap-4">
+                    <div className="p-2.5 bg-brand-500/10 rounded-lg text-brand-400">
+                      <ListVideo size={24} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-medium text-surface-100 truncate" title={metadata.title}>
+                        {metadata.title || 'Unknown Collection'}
+                      </h4>
+                      <div className="flex items-center gap-3 mt-1.5 text-xs text-surface-400">
+                        {metadata.uploader && <span>{metadata.uploader}</span>}
+                        {metadata.playlist_entries && (
+                          <span className="flex items-center gap-1">
+                            • {metadata.playlist_entries.length} items detected
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Settings Grid */}
+                  <div className="grid grid-cols-1 gap-3">
+                    {/* Keep Active Toggle */}
+                    <div className="bg-surface-900 border border-surface-700/50 p-3.5 rounded-lg flex items-center justify-between cursor-pointer" onClick={() => setKeepActive(!keepActive)}>
+                      <div className="flex flex-col gap-0.5">
+                        <label className="text-sm font-medium text-surface-200 cursor-pointer flex items-center gap-1.5">
+                          <Repeat size={14} className={keepActive ? 'text-brand-400' : 'text-surface-500'} />
+                          Keep Source Active
+                        </label>
+                        <p className="text-[11px] text-surface-500">
+                          Continues to monitor this source for new uploads in the background.
+                        </p>
+                      </div>
+
+                      {/* Custom Toggle Switch */}
+                      <div className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-surface-900 ${keepActive ? 'bg-brand-500' : 'bg-surface-600'}`}>
+                        <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${keepActive ? 'translate-x-4' : 'translate-x-0'}`} />
+                      </div>
+                    </div>
+
+                    {/* Fetch Limit */}
+                    <div className="bg-surface-900 border border-surface-700/50 p-3 rounded-lg flex flex-col gap-2">
+                      <label className="text-xs font-medium text-surface-400 flex items-center gap-1.5 mb-1">
+                        <Settings2 size={14} /> Fetch Limit
+                      </label>
+                      <div className="flex flex-col gap-2.5 px-1">
+                        <label className="flex items-center gap-2 text-sm text-surface-200 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="limitMode"
+                            checked={limitMode === 'all'}
+                            onChange={() => setLimitMode('all')}
+                            className="text-brand-500 bg-surface-800 border-surface-600 focus:ring-brand-500 rounded-full"
+                          />
+                          Fetch all available items
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-surface-200 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="limitMode"
+                            checked={limitMode === 'custom'}
+                            onChange={() => setLimitMode('custom')}
+                            className="text-brand-500 bg-surface-800 border-surface-600 focus:ring-brand-500 rounded-full"
+                          />
+                          Limit to recent items
+                        </label>
+                        {limitMode === 'custom' && (
+                          <div className="ml-6 flex items-center gap-2 mt-0.5 animate-in fade-in slide-in-from-top-1">
+                            <input
+                              type="number"
+                              min="1"
+                              value={maxItems}
+                              onChange={e => setMaxItems(Number(e.target.value))}
+                              className="w-20 bg-surface-800 border border-surface-600 rounded text-sm text-surface-200 py-1 px-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                            />
+                            <span className="text-xs text-surface-500">items maximum</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -570,9 +670,12 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
             ) : (
               <>
                 <Download size={18} />
-                {metadata?.is_playlist ? 'Add Source & Queue' : (audioOnly ? 'Extract Audio' : 'Download')}
+                {metadata?.is_playlist
+                  ? 'Add Source'
+                  : (audioOnly ? 'Extract Audio' : 'Download')}
               </>
             )}
+
           </button>
         </div>
       </div>

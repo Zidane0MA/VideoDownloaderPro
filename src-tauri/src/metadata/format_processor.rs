@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-use super::models::YtDlpVideo;
+use super::models::{YtDlpOutput, YtDlpPlaylist, YtDlpVideo};
 
 // ─── Output Types (sent to Frontend) ───────────────────────────────────────────
 
@@ -23,6 +23,24 @@ pub struct ProcessedMetadata {
     pub audio_tracks: Vec<AudioTrack>,
     pub subtitle_tracks: Vec<SubtitleTrack>,
     pub is_playlist: bool,
+    /// Populated only when `is_playlist` is true.
+    /// Contains the individual items of the playlist for UI selection.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub playlist_entries: Vec<PlaylistEntry>,
+}
+
+/// A lightweight summary of a single item inside a playlist.
+/// Used by the frontend to let the user cherry-pick which videos to queue.
+#[derive(Debug, Clone, Serialize)]
+pub struct PlaylistEntry {
+    /// Platform-specific video id (e.g. YouTube video id).
+    pub id: String,
+    pub title: String,
+    pub duration: Option<f64>,
+    pub thumbnail_url: Option<String>,
+    pub uploader: Option<String>,
+    /// The direct URL that can be passed to yt-dlp for download.
+    pub url: String,
 }
 
 /// A deduplicated video quality option.
@@ -120,6 +138,59 @@ pub fn process_metadata(video: &YtDlpVideo) -> ProcessedMetadata {
         audio_tracks,
         subtitle_tracks,
         is_playlist: false,
+        playlist_entries: Vec::new(),
+    }
+}
+
+/// Transforms a raw [`YtDlpPlaylist`] into a [`ProcessedMetadata`] with its
+/// entries mapped to lightweight [`PlaylistEntry`] items for UI selection.
+pub fn process_playlist(playlist: &YtDlpPlaylist) -> ProcessedMetadata {
+    let entries = playlist
+        .entries
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|entry| {
+            let video = match entry {
+                YtDlpOutput::Video(v) | YtDlpOutput::VideoFallback(v) => v,
+                _ => return None,
+            };
+
+            // Build a usable download URL — prefer webpage_url, then url, then original_url.
+            let url = video
+                .webpage_url
+                .as_deref()
+                .or(video.url.as_deref())
+                .or(video.original_url.as_deref())
+                .unwrap_or_default();
+
+            // Skip entries without a valid URL.
+            if url.is_empty() {
+                return None;
+            }
+
+            Some(PlaylistEntry {
+                id: video.id.clone(),
+                title: video.title.clone(),
+                duration: video.duration,
+                thumbnail_url: video.best_thumbnail(),
+                uploader: video.uploader.clone().or_else(|| video.channel.clone()),
+                url: url.to_owned(),
+            })
+        })
+        .collect();
+
+    ProcessedMetadata {
+        id: playlist.id.clone(),
+        title: playlist.title.clone(),
+        uploader: playlist.uploader.clone(),
+        duration: None,
+        thumbnail_url: None,
+        video_qualities: Vec::new(),
+        audio_tracks: Vec::new(),
+        subtitle_tracks: Vec::new(),
+        is_playlist: true,
+        playlist_entries: entries,
     }
 }
 

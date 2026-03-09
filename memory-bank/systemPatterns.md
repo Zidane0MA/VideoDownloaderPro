@@ -10,6 +10,7 @@ graph TD
     Core -->|Spawn| YTDLP[yt-dlp.exe]
     Core -->|Spawn| FFMPEG[ffmpeg.exe]
     Core -->|Spawn| DENO[deno.exe]
+    Core -->|Custom API| REQ[Reqwest Custom Extractors]
     Core -->|File System| Storage[Downloads / Metadata]
 ```
 
@@ -42,6 +43,7 @@ A progressive strategy to handle platform restrictions (YouTube, Instagram, etc.
 *   **Security:** Cookies are encrypted via **Windows DPAPI** before storage.
 
 ### 4. Download Engine
+*   **Hybrid Metadata Extraction:** For standard content, the app relies on `yt-dlp` to dump JSON metadata. For restricted/specialized content (e.g., extracting a user's TikTok Liked Videos), the system bypasses `yt-dlp` and uses custom internal Rust extractors built on `reqwest`, directly hitting the platform's internal APIs using stored L1/L2 cookies.
 *   **Queue System:** A background worker pool in Rust manages concurrency (active/queued/paused).
 *   **State Machine:** Downloads move through strict states: `QUEUED` -> `FETCHING_META` -> `READY` -> `DOWNLOADING` -> `COMPLETED`.
 *   **Recovery:** Resumable downloads using `yt-dlp -c` and partial files.

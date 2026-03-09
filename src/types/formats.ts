@@ -15,6 +15,17 @@ export interface ProcessedMetadata {
     audio_tracks: AudioTrack[];
     subtitle_tracks: SubtitleTrack[];
     is_playlist: boolean;
+    /** Populated only when `is_playlist` is true. */
+    playlist_entries?: PlaylistEntry[];
+}
+
+export interface PlaylistEntry {
+    id: string;
+    title: string;
+    duration: number | null;
+    thumbnail_url: string | null;
+    uploader: string | null;
+    url: string;
 }
 
 export interface VideoQuality {

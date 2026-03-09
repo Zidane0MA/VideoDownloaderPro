@@ -22,6 +22,7 @@ graph TD
         Tauri -->|Spawns| YTDLP[yt-dlp.exe Sidecar]
         Tauri -->|Spawns| FFMPEG[ffmpeg.exe Sidecar]
         Tauri -->|Spawns| DENO[deno.exe Sidecar]
+        Tauri -->|Custom API| REQ[Reqwest Custom Extractors]
         Tauri <-->|Sea-ORM| DB[(SQLite Database)]
         Tauri -->|File System| FS[Local Disk]
         Tauri -->|tracing| LOG[Log Files]
@@ -50,7 +51,9 @@ graph TD
     -   Queue scheduler picks up the task when a worker slot is available.
 4.  **Rust (Worker):**
     -   Updates status to `FETCHING_META`.
-    -   Executes `yt-dlp --dump-json {url}`.
+    -   *Hybrid Approach*: Checks if the URL matches an internal custom extractor (e.g., TikTok Liked Videos).
+        -   If yes: Uses internal `reqwest` + cookies to fetch and parse JSON metadata.
+        -   If no: Executes `yt-dlp --dump-json {url}`.
     -   Parses JSON response (identifies Creator, Title, Media items, estimated size).
     -   Updates status to `READY` and creates/links `posts` record.
 5.  **Rust (Auto-start or user confirm):**

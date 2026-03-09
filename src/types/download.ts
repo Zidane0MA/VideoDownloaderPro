@@ -25,6 +25,8 @@ export interface DownloadTask {
   total_bytes?: number;
   title?: string;
   thumbnail?: string;
+  source_id?: string;
+  source_name?: string;
 }
 
 export interface CreateDownloadRequest {

@@ -73,6 +73,7 @@
 - [ ] Build CRUD IPC commands for `source` entity (channels, playlists, creator profiles)
 - [ ] Build frontend "Sources" section (list, add, sync trigger)
 - [ ] Link `post.source_id` when downloading from a source
+- [x] Custom API Extractors (TikTok Liked Videos)
 
 ### Phase 5.8: Trash & Lifecycle
 - [ ] Implement soft-delete (`deleted_at` instead of physical delete)

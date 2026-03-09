@@ -1,13 +1,13 @@
-//! Core TikTok extractor for liked videos.
+//! Core TikTok extractor for profile sections (liked, saved, etc.).
 //!
-//! Uses reqwest to call TikTok's internal `/api/favorite/item_list/` endpoint
-//! and converts the response into `YtDlpOutput::Playlist` for seamless pipeline reuse.
+//! Uses reqwest to call TikTok's internal item list APIs and converts
+//! the response into `YtDlpOutput::Playlist` for seamless pipeline reuse.
 
 use reqwest::header::{HeaderMap, HeaderValue, COOKIE, REFERER, USER_AGENT};
 use thiserror::Error;
 
-use super::helpers::netscape_to_header;
-use super::models::{TikTokFavResponse, TikTokItem};
+use super::helpers::{netscape_to_header, TikTokSection};
+use super::models::{TikTokItem, TikTokItemListResponse};
 use crate::metadata::models::{YtDlpOutput, YtDlpPlaylist, YtDlpThumbnail, YtDlpVideo};
 
 // ── Error ──────────────────────────────────────────────────────────────
@@ -26,8 +26,41 @@ pub enum TikTokError {
     #[error("Failed to parse API response: {0}")]
     Parse(String),
 
-    #[error("No liked videos found (profile may be private or have no public likes)")]
+    #[error("No videos found (profile may be private or section may be empty)")]
     EmptyResult,
+}
+
+// ── Section config ─────────────────────────────────────────────────────
+
+/// Internal configuration that parametrizes the differences between sections.
+struct SectionConfig {
+    /// API endpoint path (e.g. "/api/favorite/item_list/")
+    api_path: &'static str,
+    /// Prefix for the generated playlist ID (e.g. "tiktok_liked_")
+    playlist_id_prefix: &'static str,
+    /// Human-readable label for the playlist title (e.g. "Liked Videos")
+    section_label: &'static str,
+    /// URL path suffix for webpage_url (e.g. "liked")
+    url_suffix: &'static str,
+}
+
+impl SectionConfig {
+    fn from_section(section: TikTokSection) -> Self {
+        match section {
+            TikTokSection::Liked => SectionConfig {
+                api_path: "/api/favorite/item_list/",
+                playlist_id_prefix: "tiktok_liked_",
+                section_label: "Liked Videos",
+                url_suffix: "liked",
+            },
+            TikTokSection::Saved => SectionConfig {
+                api_path: "/api/bookmark/item_list/",
+                playlist_id_prefix: "tiktok_saved_",
+                section_label: "Saved Videos",
+                url_suffix: "saved",
+            },
+        }
+    }
 }
 
 // ── Fetcher ────────────────────────────────────────────────────────────
@@ -50,18 +83,21 @@ impl TikTokFetcher {
         Self { client }
     }
 
-    /// Fetch liked videos for a TikTok user.
+    /// Fetch videos for a TikTok profile section.
     ///
     /// - `netscape_cookies`: Netscape-format cookie jar text (from `CookieManager::get_session`)
     /// - `username`: TikTok username (without @)
+    /// - `section`: Which profile section to fetch (Liked, Saved, etc.)
     /// - `limit`: Max number of items to fetch. `None` = fetch all.
-    pub async fn fetch_liked_videos(
+    pub async fn fetch_section(
         &self,
         netscape_cookies: &str,
         username: &str,
+        section: TikTokSection,
         limit: Option<u32>,
     ) -> Result<YtDlpOutput, TikTokError> {
         let cookie_header = netscape_to_header(netscape_cookies);
+        let config = SectionConfig::from_section(section);
 
         // Step 1: Resolve secUid from profile page
         let sec_uid = self.resolve_sec_uid(username, &cookie_header).await?;
@@ -72,16 +108,21 @@ impl TikTokFetcher {
             &sec_uid[..sec_uid.len().min(20)]
         );
 
-        // Step 2: Paginate liked videos
+        // Step 2: Paginate items from the section API
         let items = self
-            .paginate_liked_items(&sec_uid, username, &cookie_header, limit)
+            .paginate_items(&sec_uid, username, &cookie_header, &config, limit)
             .await?;
 
         if items.is_empty() {
             return Err(TikTokError::EmptyResult);
         }
 
-        tracing::info!("Fetched {} liked videos for @{}", items.len(), username);
+        tracing::info!(
+            "Fetched {} {} for @{}",
+            items.len(),
+            config.section_label,
+            username
+        );
 
         // Step 3: Convert to YtDlpOutput::Playlist
         let entries: Vec<YtDlpOutput> = items
@@ -90,16 +131,30 @@ impl TikTokFetcher {
             .collect();
 
         let playlist = YtDlpPlaylist {
-            id: format!("tiktok_liked_{}", username),
-            title: format!("@{}'s Liked Videos", username),
+            id: format!("{}{}", config.playlist_id_prefix, username),
+            title: format!("@{}'s {}", username, config.section_label),
             description: None,
             uploader: Some(username.to_string()),
             uploader_id: Some(username.to_string()),
-            webpage_url: Some(format!("https://www.tiktok.com/@{}/liked", username)),
+            webpage_url: Some(format!(
+                "https://www.tiktok.com/@{}/{}",
+                username, config.url_suffix
+            )),
             entries: Some(entries),
         };
 
         Ok(YtDlpOutput::Playlist(playlist))
+    }
+
+    /// Convenience wrapper for fetching liked videos (backwards compatibility).
+    pub async fn fetch_liked_videos(
+        &self,
+        netscape_cookies: &str,
+        username: &str,
+        limit: Option<u32>,
+    ) -> Result<YtDlpOutput, TikTokError> {
+        self.fetch_section(netscape_cookies, username, TikTokSection::Liked, limit)
+            .await
     }
 
     /// Fetch the profile page and extract `secUid` from embedded JSON.
@@ -156,12 +211,13 @@ impl TikTokFetcher {
         })
     }
 
-    /// Paginate through the favorite item_list API.
-    async fn paginate_liked_items(
+    /// Paginate through a TikTok item list API endpoint.
+    async fn paginate_items(
         &self,
         sec_uid: &str,
         username: &str,
         cookie_header: &str,
+        config: &SectionConfig,
         limit: Option<u32>,
     ) -> Result<Vec<TikTokItem>, TikTokError> {
         let mut all_items = Vec::new();
@@ -180,12 +236,13 @@ impl TikTokFetcher {
 
         for page in 0..MAX_PAGES {
             let api_url = format!(
-                "https://www.tiktok.com/api/favorite/item_list/\
+                "https://www.tiktok.com{}\
                  ?aid=1988\
                  &count={PAGE_SIZE}\
                  &cursor={cursor}\
                  &secUid={sec_uid}\
-                 &cookie_enabled=true"
+                 &cookie_enabled=true",
+                config.api_path,
             );
 
             tracing::debug!("Fetching page {} (cursor={})", page, cursor);
@@ -218,10 +275,10 @@ impl TikTokFetcher {
             }
 
             let text = response.text().await?;
-            let fav_response: TikTokFavResponse =
+            let list_response: TikTokItemListResponse =
                 serde_json::from_str(&text).map_err(|e| TikTokError::Parse(e.to_string()))?;
 
-            if let Some(items) = fav_response.item_list {
+            if let Some(items) = list_response.item_list {
                 all_items.extend(items);
             }
 
@@ -232,12 +289,12 @@ impl TikTokFetcher {
             }
 
             // Check if there are more pages
-            let has_more = fav_response.has_more.unwrap_or(false);
+            let has_more = list_response.has_more.unwrap_or(false);
             if !has_more {
                 break;
             }
 
-            cursor = fav_response.cursor.unwrap_or_else(|| "0".to_string());
+            cursor = list_response.cursor.unwrap_or_else(|| "0".to_string());
         }
 
         Ok(all_items)

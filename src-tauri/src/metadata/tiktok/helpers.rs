@@ -1,5 +1,46 @@
 //! Utility functions for TikTok URL parsing and cookie format conversion.
 
+// ── Section detection ──────────────────────────────────────────────────
+
+/// Supported TikTok profile sections that use the internal API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TikTokSection {
+    Liked,
+    Saved,
+}
+
+/// Detects the TikTok section type from a URL.
+///
+/// - `/@user/liked` → `Some(Liked)`
+/// - `/@user/saved` → `Some(Saved)`
+/// - `/@user`, `/@user/video/123`, etc. → `None`
+pub fn detect_tiktok_section(url: &str) -> Option<TikTokSection> {
+    let url_lower = url.to_lowercase();
+    if !url_lower.contains("tiktok.com") {
+        return None;
+    }
+
+    // Find the path segment after the username
+    let at_pos = url_lower.find('@')?;
+    let after_at = &url_lower[at_pos + 1..];
+    // Skip the username itself
+    let slash_pos = after_at.find('/')?;
+    let section_path = &after_at[slash_pos + 1..];
+    // Trim trailing slashes or query params
+    let section = section_path
+        .split(&['/', '?', '#'][..])
+        .next()
+        .unwrap_or("");
+
+    match section {
+        "liked" => Some(TikTokSection::Liked),
+        "saved" => Some(TikTokSection::Saved),
+        _ => None,
+    }
+}
+
+// ── Cookie conversion ──────────────────────────────────────────────────
+
 /// Converts Netscape cookie jar text (tab-separated) to a `Cookie` header string.
 ///
 /// Input format: domain \t flag \t path \t secure \t expiry \t name \t value
@@ -23,6 +64,8 @@ pub fn netscape_to_header(netscape: &str) -> String {
         .join("; ")
 }
 
+// ── Username extraction ────────────────────────────────────────────────
+
 /// Extracts the username from a TikTok URL.
 ///
 /// Handles: `https://www.tiktok.com/@username/liked`, `https://tiktok.com/@user`
@@ -43,6 +86,52 @@ pub fn extract_tiktok_username(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Section detection tests ────────────────────────────────────────
+
+    #[test]
+    fn test_detect_section_liked() {
+        let url = "https://www.tiktok.com/@user/liked";
+        assert_eq!(detect_tiktok_section(url), Some(TikTokSection::Liked));
+    }
+
+    #[test]
+    fn test_detect_section_saved() {
+        let url = "https://www.tiktok.com/@user/saved";
+        assert_eq!(detect_tiktok_section(url), Some(TikTokSection::Saved));
+    }
+
+    #[test]
+    fn test_detect_section_profile_only() {
+        let url = "https://www.tiktok.com/@user";
+        assert_eq!(detect_tiktok_section(url), None);
+    }
+
+    #[test]
+    fn test_detect_section_video_url() {
+        let url = "https://www.tiktok.com/@user/video/7300000000";
+        assert_eq!(detect_tiktok_section(url), None);
+    }
+
+    #[test]
+    fn test_detect_section_non_tiktok() {
+        let url = "https://www.youtube.com/@user/liked";
+        assert_eq!(detect_tiktok_section(url), None);
+    }
+
+    #[test]
+    fn test_detect_section_case_insensitive() {
+        let url = "https://www.tiktok.com/@User/Liked";
+        assert_eq!(detect_tiktok_section(url), Some(TikTokSection::Liked));
+    }
+
+    #[test]
+    fn test_detect_section_with_query_params() {
+        let url = "https://www.tiktok.com/@user/liked?lang=en";
+        assert_eq!(detect_tiktok_section(url), Some(TikTokSection::Liked));
+    }
+
+    // ── Cookie conversion tests ────────────────────────────────────────
 
     #[test]
     fn test_netscape_to_header() {
@@ -67,6 +156,8 @@ mod tests {
         assert!(header.is_empty());
     }
 
+    // ── Username extraction tests ──────────────────────────────────────
+
     #[test]
     fn test_extract_username_liked_url() {
         let url = "https://www.tiktok.com/@someuser/liked";
@@ -78,7 +169,7 @@ mod tests {
         let url = "https://tiktok.com/@anotheruser";
         assert_eq!(
             extract_tiktok_username(url),
-            Some("anotheruser".to_string())
+            Some("anotheruser".to_string()),
         );
     }
 

@@ -18,12 +18,14 @@ graph TD
         Queue -->|Acquire Permit| Sem[Semaphore]
         Queue -->|Poll by priority| DB
         Queue -->|Spawn + child token| Worker[DownloadWorker]
+        Worker -->|On failure/success| Queue
     end
     
-    Worker -->|Update Progress| DB
-    Worker -->|Emit Events| UI
+    Queue -->|Update Progress & Status| DB
+    Queue -->|Create Media & Thumbs| DB
+    Worker -->|Emit Progress Events| UI
     Worker -->|Release Permit| Sem
-    Worker -->|On failure| Retry{retries < max?}
+    Queue -->|Retry logic| Retry{retries < max?}
     Retry -->|Yes: backoff + requeue| DB
     Retry -->|No: mark FAILED| DB
 ```
@@ -38,6 +40,7 @@ graph TD
 - **Task Token Registry**: `HashMap<String, CancellationToken>` tracks active tasks for targeted cancellation.
 - **Stale Recovery**: On startup, resets any `PROCESSING` tasks back to `QUEUED`.
 - **Scheduler Loop**: Checks DB before acquiring a permit; waits for notification when queue is empty.
+- **Lifecycle Management**: The queue manager handles post-download DB operations. Upon worker completion, the queue updates the task to `COMPLETED`, handles `post` resolution, inserts `media` DB rows, triggers thumbnail generation, and manages error/retry loops gracefully.
 
 ### 2. DownloadWorker (`src-tauri/src/download/worker.rs`)
 - **Cancellation**: Uses `tokio::select!` to race stdout reading against `CancellationToken`.
@@ -45,9 +48,9 @@ graph TD
 - **Format selection**: Passes `-f <format>` when `format_selection` is provided.
 - **Output template**: Uses `--output "%(title)s.%(ext)s"`.
 - **Progress throttling**: Emits events at most every 500ms to avoid IPC flooding.
-- **DB writes**: Persists `progress`, `speed`, `eta` using `update_many` to avoid redundant `SELECT` queries.
 - **Robust Termination**: On Windows, uses `taskkill /F /T /PID` to ensure the entire process tree (including `ffmpeg`) is killed.
 - **Merge Handling**: Parses `[Merger]` output to identify the final filename and reads the actual file size from disk to ensure accuracy.
+*Note: DB status updates and retry logic has been abstracted to the DownloadQueue manager, leaving the worker strictly focused on executing and parsing the `yt-dlp` process.*
 
 ### 3. Task States (`download_task` table)
 - `QUEUED`: Waiting for a slot.
