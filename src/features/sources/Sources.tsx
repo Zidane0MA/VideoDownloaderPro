@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ListVideo, Trash2, RefreshCw, Layers, Plus, X, Loader2, ToggleLeft, ToggleRight } from 'lucide-react';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
+import { QUICK_ACTIONS } from './config/quickActions';
 
 export interface SourceResponse {
     id: string;
@@ -117,6 +118,18 @@ export const Sources: React.FC = () => {
         }
     };
 
+    const handleQuickAction = (presetUrl: string) => {
+        setAddUrl(presetUrl);
+        if (!showAddInput) {
+            setShowAddInput(true);
+        }
+        // Small timeout to allow input to mount and focus if it was hidden
+        setTimeout(() => {
+            const input = document.getElementById('source-url-input');
+            if (input) input.focus();
+        }, 50);
+    };
+
     if (isLoading) {
         return (
             <div className="flex justify-center items-center h-64 text-surface-400">
@@ -153,12 +166,33 @@ export const Sources: React.FC = () => {
 
             {/* Add Source Input */}
             {showAddInput && (
-                <div className="animate-in slide-in-from-top-2 fade-in duration-200 p-4 bg-surface-800 border border-surface-700 rounded-xl mb-4">
-                    <label className="block text-sm font-medium text-surface-400 mb-2">
-                        Playlist or Channel URL
+                <div className="animate-in slide-in-from-top-2 fade-in duration-200 p-4 bg-surface-800 border border-surface-700 rounded-xl mb-6 shadow-lg shadow-surface-900/50">
+
+                    {/* Quick Actions */}
+                    <div className="mb-4">
+                        <label className="block text-xs font-semibold text-brand-400 mb-2 uppercase tracking-wider">
+                            Quick Actions
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                            {QUICK_ACTIONS.map(action => (
+                                <button
+                                    key={action.id}
+                                    onClick={() => handleQuickAction(action.actionUrl)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-surface-200 bg-surface-900 border border-surface-700 hover:border-surface-500 hover:bg-surface-700 rounded-lg transition-all"
+                                >
+                                    <action.icon size={14} className={action.iconColorClass} />
+                                    {action.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <label htmlFor="source-url-input" className="block text-sm font-medium text-surface-400 mb-2">
+                        Playlist, Channel or Profile URL
                     </label>
                     <div className="flex gap-2">
                         <input
+                            id="source-url-input"
                             type="text"
                             value={addUrl}
                             onChange={(e) => setAddUrl(e.target.value)}

@@ -267,9 +267,30 @@ pub async fn add_source_command(
     // When `None`, all videos in the playlist are queued.
     selected_ids: Option<Vec<String>>,
 ) -> Result<AddSourceResponse, String> {
+    let mut actual_url = url;
+
+    // --- Intercept vdp:// pseudo-URLs ---
+    if actual_url.starts_with("vdp://tiktok/me/") {
+        use sea_orm::EntityTrait;
+        let session = crate::entity::platform_session::Entity::find_by_id("tiktok")
+            .one(&state.db)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("TikTok session not found. Please log in first.")?;
+
+        let username = session.username.ok_or(
+            "Could not resolve your TikTok username from the active session. Please log in again.",
+        )?;
+
+        let section = actual_url.strip_prefix("vdp://tiktok/me/").unwrap();
+        // Convert pseudo-URL into a real TikTok profile URL for processing and DB storage
+        actual_url = format!("https://www.tiktok.com/@{}/{}", username, section);
+    }
+    // ------------------------------------
+
     // --- Dedup check: reject if a source with this URL already exists ---
     let existing = source::Entity::find()
-        .filter(source::Column::Url.eq(url.clone()))
+        .filter(source::Column::Url.eq(actual_url.clone()))
         .one(&state.db)
         .await
         .map_err(|e| format!("Database error: {}", e))?;
@@ -281,11 +302,11 @@ pub async fn add_source_command(
         ));
     }
 
-    let tiktok_section = crate::metadata::tiktok::helpers::detect_tiktok_section(&url);
+    let tiktok_section = crate::metadata::tiktok::helpers::detect_tiktok_section(&actual_url);
     let saved_id = if let Some(section) = tiktok_section {
-        handle_tiktok_source(&app, &state, &url, section).await?
+        handle_tiktok_source(&app, &state, &actual_url, section).await?
     } else {
-        handle_ytdlp_source(&app, &state, &url).await?
+        handle_ytdlp_source(&app, &state, &actual_url).await?
     };
 
     let items_queued = queue_posts(&state, &queue, saved_id.clone(), selected_ids).await?;

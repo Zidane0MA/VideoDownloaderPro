@@ -10,6 +10,7 @@ import type {
   ProcessedMetadata, DownloadOptions
 } from '../types/formats';
 import { formatFileSize } from '../types/formats';
+import { PLATFORM_CONTEXTS, PlatformConfig, ContextOption } from '../features/sources/config/platformContexts';
 
 interface AddDownloadModalProps {
   isOpen: boolean;
@@ -22,6 +23,10 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
   // Phase 1: Fetching metadata
   const [isFetchingInfo, setIsFetchingInfo] = useState(false);
   const [metadata, setMetadata] = useState<ProcessedMetadata | null>(null);
+
+  // Context Selection (Smart Normalization)
+  const [detectedPlatformConfig, setDetectedPlatformConfig] = useState<PlatformConfig | null>(null);
+  const [selectedContext, setSelectedContext] = useState<ContextOption | null>(null);
 
   // Phase 2: Selection state
   const [selectedVideoId, setSelectedVideoId] = useState<string>(''); // '' = Best Auto
@@ -63,7 +68,33 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
     setLimitMode('all');
     setMaxItems(50);
     setKeepActive(false);
+    setKeepActive(false);
+    setDetectedPlatformConfig(null);
+    setSelectedContext(null);
     onClose();
+  };
+
+  // Helper to dynamically analyze URL on input change
+  const handleUrlChange = (newUrl: string) => {
+    setUrl(newUrl);
+
+    if (metadata || fallbackMode) {
+      setMetadata(null);
+      setFallbackMode(false);
+    }
+
+    // Reset context state
+    setSelectedContext(null);
+    setDetectedPlatformConfig(null);
+
+    const strippedUrl = newUrl.replace(/^https?:\/\//, '').replace(/^www\./, '');
+    for (const config of PLATFORM_CONTEXTS) {
+      if (config.targetRegex.test(strippedUrl)) {
+        setDetectedPlatformConfig(config);
+        setSelectedContext(config.options[0] || null);
+        break;
+      }
+    }
   };
 
   const handleFetchInfo = async () => {
@@ -81,8 +112,15 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
     setSelectedSubtitles(new Set());
     setAudioOnly(false);
 
+    let finalUrl = url.trim();
+
+    // Apply Context Suffix if needed
+    if (detectedPlatformConfig && selectedContext) {
+      finalUrl = selectedContext.urlMutator(finalUrl);
+    }
+
     try {
-      const output = await invoke<ProcessedMetadata>('fetch_metadata_command', { url });
+      const output = await invoke<ProcessedMetadata>('fetch_metadata_command', { url: finalUrl });
 
       if (output.is_playlist || output.video_qualities.length > 0 || output.audio_tracks.length > 0) {
         setMetadata(output);
@@ -109,9 +147,14 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
     // If it's a playlist, send the new configuration to `add_source_command`
     if (metadata?.is_playlist) {
       try {
+        let finalUrl = url;
+        if (detectedPlatformConfig && selectedContext) {
+          finalUrl = selectedContext.urlMutator(finalUrl.trim());
+        }
+
         const selectedIds = undefined; // For backend backwards-compatibility we pass absent or null
         await invoke('add_source_command', {
-          url,
+          url: finalUrl,
           selectedIds,
           // Note: Backend signature hasn't been updated for these yet, but future PR will read them:
           // sourceType,
@@ -213,13 +256,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
                 id="url"
                 type="text"
                 value={url}
-                onChange={(e) => {
-                  setUrl(e.target.value);
-                  if (metadata || fallbackMode) {
-                    setMetadata(null);
-                    setFallbackMode(false);
-                  }
-                }}
+                onChange={(e) => handleUrlChange(e.target.value)}
                 disabled={isFetchingInfo || isSubmitting}
                 placeholder="https://youtube.com/watch?v=..."
                 className="w-full bg-surface-900 border border-surface-700 rounded-lg px-4 py-2 text-surface-100 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
@@ -228,7 +265,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
               <button
                 onClick={handleFetchInfo}
                 disabled={!url.trim() || isFetchingInfo || isSubmitting || !!metadata}
-                className="flex items-center gap-2 px-4 py-2 bg-surface-700 hover:bg-surface-600 text-surface-100 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-surface-600"
+                className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-brand-600/20"
               >
                 {isFetchingInfo ? (
                   <Loader2 size={18} className="animate-spin" />
@@ -239,6 +276,39 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
               </button>
             </div>
           </div>
+
+          {/* Context Selector UI */}
+          {detectedPlatformConfig && !metadata && !fallbackMode && (
+            <div className="animate-in fade-in slide-in-from-top-2 pt-2">
+              <label className="block text-xs font-semibold text-brand-400 mb-2 uppercase tracking-wider">
+                What do you want to download?
+              </label>
+
+              <div className="grid grid-cols-3 gap-2">
+                {detectedPlatformConfig.options.map(option => {
+                  const isSelected = selectedContext?.id === option.id;
+
+                  let activeClasses = "";
+                  if (option.colorClass === 'brand') activeClasses = "bg-brand-600/15 border-brand-500 text-brand-300 shadow-sm shadow-brand-500/10";
+                  else if (option.colorClass === 'pink') activeClasses = "bg-pink-500/15 border-pink-500 text-pink-400 shadow-sm shadow-pink-500/10";
+                  else if (option.colorClass === 'amber') activeClasses = "bg-amber-500/15 border-amber-500 text-amber-400 shadow-sm shadow-amber-500/10";
+
+                  const inactiveClasses = "bg-surface-900 border-surface-700 text-surface-400 hover:border-surface-600 hover:text-surface-200 hover:bg-surface-800";
+
+                  return (
+                    <button
+                      key={option.id}
+                      onClick={() => setSelectedContext(option)}
+                      className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all duration-200 ${isSelected ? activeClasses : inactiveClasses}`}
+                    >
+                      <option.icon size={20} className="mb-1.5" />
+                      <span className="text-[11px] font-medium">{option.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Error */}
           {error && (

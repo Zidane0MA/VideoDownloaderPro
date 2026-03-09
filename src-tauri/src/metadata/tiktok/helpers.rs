@@ -13,6 +13,7 @@ pub enum TikTokSection {
 ///
 /// - `/@user/liked` → `Some(Liked)`
 /// - `/@user/saved` → `Some(Saved)`
+/// - `/@me/saved` → `Some(Saved)`
 /// - `/@user`, `/@user/video/123`, etc. → `None`
 pub fn detect_tiktok_section(url: &str) -> Option<TikTokSection> {
     let url_lower = url.to_lowercase();
@@ -68,7 +69,7 @@ pub fn netscape_to_header(netscape: &str) -> String {
 
 /// Extracts the username from a TikTok URL.
 ///
-/// Handles: `https://www.tiktok.com/@username/liked`, `https://tiktok.com/@user`
+/// Handles: `https://www.tiktok.com/@username/liked`, `https://tiktok.com/@user`, `https://tiktok.com/@me/saved`
 pub fn extract_tiktok_username(url: &str) -> Option<String> {
     // Find "@" in the URL path and extract username until next "/" or end
     let at_pos = url.find('@')?;

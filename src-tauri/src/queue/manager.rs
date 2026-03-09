@@ -27,6 +27,8 @@ const MEDIA_TYPE_IMAGE: &str = "IMAGE";
 
 /// Base delay for exponential backoff on retries.
 const RETRY_BASE_DELAY_SECS: u64 = 5;
+/// Multiplier for exponential backoff on retries.
+const RETRY_BACKOFF_MULTIPLIER: u64 = 2;
 
 #[derive(Clone)]
 pub struct DownloadQueue {
@@ -41,6 +43,44 @@ pub struct DownloadQueue {
     paused: Arc<AtomicBool>,
     /// Receives live concurrency-limit updates from `update_setting`.
     concurrency_rx: watch::Receiver<usize>,
+}
+
+struct ErrorDetails {
+    is_cancelled: bool,
+    message: String,
+    total: Option<u64>,
+    downloaded: u64,
+    filename: Option<String>,
+}
+
+impl ErrorDetails {
+    fn from_error(err: &DownloadError) -> Self {
+        match err {
+            DownloadError::Cancelled {
+                total_bytes,
+                downloaded_bytes,
+                filename,
+            } => Self {
+                is_cancelled: true,
+                message: "Download cancelled".to_string(),
+                total: *total_bytes,
+                downloaded: *downloaded_bytes,
+                filename: filename.clone(),
+            },
+            DownloadError::Failed {
+                message,
+                total_bytes,
+                downloaded_bytes,
+                filename,
+            } => Self {
+                is_cancelled: false,
+                message: message.clone(),
+                total: *total_bytes,
+                downloaded: *downloaded_bytes,
+                filename: filename.clone(),
+            },
+        }
+    }
 }
 
 impl DownloadQueue {
@@ -193,70 +233,80 @@ impl DownloadQueue {
                 }
             };
 
-            // Acquire permit
-            let permit = tokio::select! {
-                result = self.semaphore.clone().acquire_owned() => {
-                    match result {
-                        Ok(p) => p,
-                        Err(_) => {
-                            tracing::error!("Semaphore closed, stopping scheduler");
-                            break;
-                        }
+            // Process the task
+            if !self.process_next_task(task_model).await {
+                break;
+            }
+        }
+    }
+
+    /// Process the next acquired task: acquire permit, lock DB, and spawn worker
+    async fn process_next_task(&self, task_model: download_task::Model) -> bool {
+        // Acquire permit
+        let permit = tokio::select! {
+            result = self.semaphore.clone().acquire_owned() => {
+                match result {
+                    Ok(p) => p,
+                    Err(_) => {
+                        tracing::error!("Semaphore closed, stopping scheduler");
+                        return false;
                     }
                 }
-                _ = self.shutdown_token.cancelled() => break,
-            };
-
-            tracing::info!("Starting task: {}", task_model.id);
-            let app = self.app_handle.clone();
-            let task_id = task_model.id.clone();
-            let db = app.state::<AppState>().db.clone();
-
-            // Setup cancellation token for this task
-            let task_token = self.shutdown_token.child_token();
-            self.task_tokens
-                .lock()
-                .await
-                .insert(task_id.clone(), task_token.clone());
-
-            // Optimistic locking
-            let update_result = download_task::Entity::update_many()
-                .col_expr(
-                    download_task::Column::Status,
-                    sea_orm::sea_query::Expr::value("PROCESSING"),
-                )
-                .col_expr(
-                    download_task::Column::StartedAt,
-                    sea_orm::sea_query::Expr::value(Utc::now()),
-                )
-                .filter(download_task::Column::Id.eq(&task_id))
-                .filter(download_task::Column::Status.eq("QUEUED"))
-                .exec(&db)
-                .await;
-
-            match update_result {
-                Ok(res) if res.rows_affected == 0 => {
-                    tracing::info!(
-                        "Task {} status changed (paused/cancelled) before execution, skipping",
-                        task_id
-                    );
-                    continue;
-                }
-                Err(e) => {
-                    tracing::error!("Failed to update task status: {}", e);
-                    continue;
-                }
-                _ => {} // Success
             }
+            _ = self.shutdown_token.cancelled() => return false,
+        };
 
-            // Spawn worker
-            let queue = self.clone();
-            tokio::spawn(async move {
-                queue
-                    .process_standalone_task(app, task_model, permit, task_token)
-                    .await;
-            });
+        tracing::info!("Starting task: {}", task_model.id);
+        let app = self.app_handle.clone();
+        let task_id = task_model.id.clone();
+        let db = app.state::<AppState>().db.clone();
+
+        // Setup cancellation token for this task
+        let task_token = self.shutdown_token.child_token();
+        self.task_tokens
+            .lock()
+            .await
+            .insert(task_id.clone(), task_token.clone());
+
+        // Optimistic locking
+        let update_result = download_task::Entity::update_many()
+            .col_expr(
+                download_task::Column::Status,
+                sea_orm::sea_query::Expr::value("PROCESSING"),
+            )
+            .col_expr(
+                download_task::Column::StartedAt,
+                sea_orm::sea_query::Expr::value(Utc::now()),
+            )
+            .filter(download_task::Column::Id.eq(&task_id))
+            .filter(download_task::Column::Status.eq("QUEUED"))
+            .exec(&db)
+            .await;
+
+        match update_result {
+            Ok(res) if res.rows_affected == 0 => {
+                tracing::info!(
+                    "Task {} status changed (paused/cancelled) before execution, skipping",
+                    task_id
+                );
+                return true;
+            }
+            Err(e) => {
+                tracing::error!("Failed to update task status: {}", e);
+                return true;
+            }
+            _ => {} // Success
         }
+
+        // Spawn worker
+        let queue = self.clone();
+        tokio::spawn(async move {
+            queue
+                .process_standalone_task(app, task_model, permit, task_token)
+                .await;
+        });
+
+        true
     }
 
     async fn get_next_task(&self) -> Option<download_task::Model> {
@@ -503,38 +553,13 @@ impl DownloadQueue {
         err: DownloadError,
         notify: Arc<Notify>,
     ) {
-        let (is_cancelled, message, total, downloaded, filename) = match &err {
-            DownloadError::Cancelled {
-                total_bytes,
-                downloaded_bytes,
-                filename,
-            } => (
-                true,
-                "Download cancelled".to_string(),
-                *total_bytes,
-                *downloaded_bytes,
-                filename.clone(),
-            ),
-            DownloadError::Failed {
-                message,
-                total_bytes,
-                downloaded_bytes,
-                filename,
-            } => (
-                false,
-                message.clone(),
-                *total_bytes,
-                *downloaded_bytes,
-                filename.clone(),
-            ),
-        };
-
-        let total_i64: Option<i64> = total.map(|v| v as i64);
+        let details = ErrorDetails::from_error(&err);
+        let total_i64: Option<i64> = details.total.map(|v| v as i64);
 
         if let Err(e) = download_task::Entity::update_many()
             .col_expr(
                 download_task::Column::DownloadedBytes,
-                sea_orm::sea_query::Expr::value(downloaded as i64),
+                sea_orm::sea_query::Expr::value(details.downloaded as i64),
             )
             .col_expr(
                 download_task::Column::TotalBytes,
@@ -547,8 +572,16 @@ impl DownloadQueue {
             tracing::error!("Failed to update stats for task {}: {}", task_id, e);
         }
 
-        if is_cancelled {
-            Self::handle_task_cancellation(app, db, task_id, download_dir, message, filename).await;
+        if details.is_cancelled {
+            Self::handle_task_cancellation(
+                app,
+                db,
+                task_id,
+                download_dir,
+                details.message,
+                details.filename,
+            )
+            .await;
         } else {
             Self::handle_task_retry(
                 app,
@@ -556,7 +589,7 @@ impl DownloadQueue {
                 task_id,
                 current_retries,
                 max_retries,
-                message,
+                details.message,
                 notify,
             )
             .await;
@@ -580,87 +613,11 @@ impl DownloadQueue {
 
         match current_status {
             Some("PAUSED") => {
-                tracing::info!("Task paused: {}", task_id);
-                if let Err(e) = download_task::Entity::update_many()
-                    .col_expr(
-                        download_task::Column::Speed,
-                        sea_orm::sea_query::Expr::value(Option::<String>::None),
-                    )
-                    .col_expr(
-                        download_task::Column::Eta,
-                        sea_orm::sea_query::Expr::value(Option::<String>::None),
-                    )
-                    .col_expr(
-                        download_task::Column::ErrorMessage,
-                        sea_orm::sea_query::Expr::value(Option::<String>::None),
-                    )
-                    .filter(download_task::Column::Id.eq(task_id))
-                    .filter(download_task::Column::Status.eq("PAUSED"))
-                    .exec(db)
-                    .await
-                {
-                    tracing::error!("Failed to set task {} to PAUSED: {}", task_id, e);
-                }
-                if let Err(e) = app.emit("download-paused", task_id) {
-                    tracing::warn!(
-                        "Failed to emit download-paused event for task {}: {}",
-                        task_id,
-                        e
-                    );
-                }
+                Self::handle_task_paused(app, db, task_id).await;
             }
             Some("PROCESSING") | Some("CANCELLED") => {
-                tracing::info!("Task cancelled: {}", task_id);
-
-                if let Some(fname) = filename {
-                    let file_path = download_dir.join(&fname);
-                    let part_path = download_dir.join(format!("{}.part", fname));
-
-                    tracing::info!("Cleaning up files for cancelled task: {:?}", file_path);
-
-                    if matches!(tokio::fs::try_exists(&part_path).await, Ok(true)) {
-                        if let Err(e) = tokio::fs::remove_file(&part_path).await {
-                            tracing::warn!("Failed to delete part file: {}", e);
-                        }
-                    }
-                    if matches!(tokio::fs::try_exists(&file_path).await, Ok(true)) {
-                        if let Err(e) = tokio::fs::remove_file(&file_path).await {
-                            tracing::warn!("Failed to delete file: {}", e);
-                        }
-                    }
-                }
-
-                if let Err(e) = download_task::Entity::update_many()
-                    .col_expr(
-                        download_task::Column::Status,
-                        sea_orm::sea_query::Expr::value("CANCELLED"),
-                    )
-                    .col_expr(
-                        download_task::Column::ErrorMessage,
-                        sea_orm::sea_query::Expr::value(Some(message)),
-                    )
-                    .col_expr(
-                        download_task::Column::Speed,
-                        sea_orm::sea_query::Expr::value(Option::<String>::None),
-                    )
-                    .col_expr(
-                        download_task::Column::Eta,
-                        sea_orm::sea_query::Expr::value(Option::<String>::None),
-                    )
-                    .filter(download_task::Column::Id.eq(task_id))
-                    .filter(download_task::Column::Status.is_in(["PROCESSING", "CANCELLED"]))
-                    .exec(db)
-                    .await
-                {
-                    tracing::error!("Failed to set task {} to CANCELLED: {}", task_id, e);
-                }
-                if let Err(e) = app.emit("download-cancelled", task_id) {
-                    tracing::warn!(
-                        "Failed to emit download-cancelled event for task {}: {}",
-                        task_id,
-                        e
-                    );
-                }
+                Self::handle_task_cancelled(app, db, task_id, download_dir, message, filename)
+                    .await;
             }
             _ => {
                 tracing::info!(
@@ -669,6 +626,98 @@ impl DownloadQueue {
                     current_status.unwrap_or("unknown")
                 );
             }
+        }
+    }
+
+    async fn handle_task_paused(app: &AppHandle, db: &DatabaseConnection, task_id: &str) {
+        tracing::info!("Task paused: {}", task_id);
+        if let Err(e) = download_task::Entity::update_many()
+            .col_expr(
+                download_task::Column::Speed,
+                sea_orm::sea_query::Expr::value(Option::<String>::None),
+            )
+            .col_expr(
+                download_task::Column::Eta,
+                sea_orm::sea_query::Expr::value(Option::<String>::None),
+            )
+            .col_expr(
+                download_task::Column::ErrorMessage,
+                sea_orm::sea_query::Expr::value(Option::<String>::None),
+            )
+            .filter(download_task::Column::Id.eq(task_id))
+            .filter(download_task::Column::Status.eq("PAUSED"))
+            .exec(db)
+            .await
+        {
+            tracing::error!("Failed to set task {} to PAUSED: {}", task_id, e);
+        }
+        if let Err(e) = app.emit("download-paused", task_id) {
+            tracing::warn!(
+                "Failed to emit download-paused event for task {}: {}",
+                task_id,
+                e
+            );
+        }
+    }
+
+    async fn handle_task_cancelled(
+        app: &AppHandle,
+        db: &DatabaseConnection,
+        task_id: &str,
+        download_dir: &std::path::Path,
+        message: String,
+        filename: Option<String>,
+    ) {
+        tracing::info!("Task cancelled: {}", task_id);
+
+        if let Some(fname) = filename {
+            let file_path = download_dir.join(&fname);
+            let part_path = download_dir.join(format!("{}.part", fname));
+
+            tracing::info!("Cleaning up files for cancelled task: {:?}", file_path);
+
+            if matches!(tokio::fs::try_exists(&part_path).await, Ok(true)) {
+                if let Err(e) = tokio::fs::remove_file(&part_path).await {
+                    tracing::warn!("Failed to delete part file: {}", e);
+                }
+            }
+            if matches!(tokio::fs::try_exists(&file_path).await, Ok(true)) {
+                if let Err(e) = tokio::fs::remove_file(&file_path).await {
+                    tracing::warn!("Failed to delete file: {}", e);
+                }
+            }
+        }
+
+        if let Err(e) = download_task::Entity::update_many()
+            .col_expr(
+                download_task::Column::Status,
+                sea_orm::sea_query::Expr::value("CANCELLED"),
+            )
+            .col_expr(
+                download_task::Column::ErrorMessage,
+                sea_orm::sea_query::Expr::value(Some(message)),
+            )
+            .col_expr(
+                download_task::Column::Speed,
+                sea_orm::sea_query::Expr::value(Option::<String>::None),
+            )
+            .col_expr(
+                download_task::Column::Eta,
+                sea_orm::sea_query::Expr::value(Option::<String>::None),
+            )
+            .filter(download_task::Column::Id.eq(task_id))
+            .filter(download_task::Column::Status.is_in(["PROCESSING", "CANCELLED"]))
+            .exec(db)
+            .await
+        {
+            tracing::error!("Failed to set task {} to CANCELLED: {}", task_id, e);
+        }
+        if let Err(e) = app.emit("download-cancelled", task_id) {
+            tracing::warn!(
+                "Failed to emit download-cancelled event for task {}: {}",
+                task_id,
+                e
+            );
         }
     }
 
@@ -683,59 +732,81 @@ impl DownloadQueue {
     ) {
         let new_retries = current_retries + 1;
         if new_retries < max_retries {
-            tracing::warn!(
-                "Task {} failed (attempt {}/{}), requeueing: {}",
-                task_id,
-                new_retries,
-                max_retries,
-                message
-            );
-
-            if let Err(e) = download_task::Entity::update(download_task::ActiveModel {
-                id: Set(task_id.to_string()),
-                status: Set("QUEUED".to_string()),
-                retries: Set(new_retries),
-                error_message: Set(Some(message)),
-                ..Default::default()
-            })
-            .exec(db)
-            .await
-            {
-                tracing::error!("Failed to requeue task {}: {}", task_id, e);
-            }
-
-            let delay = RETRY_BASE_DELAY_SECS * 2u64.pow(new_retries as u32);
-            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
-
-            notify.notify_one();
+            Self::requeue_task(db, task_id, new_retries, max_retries, &message, notify).await;
         } else {
-            tracing::error!(
-                "Task {} permanently failed after {} retries: {}",
+            Self::fail_task(app, db, task_id, new_retries, max_retries, &message).await;
+        }
+    }
+
+    async fn requeue_task(
+        db: &DatabaseConnection,
+        task_id: &str,
+        new_retries: i32,
+        max_retries: i32,
+        message: &str,
+        notify: Arc<Notify>,
+    ) {
+        tracing::warn!(
+            "Task {} failed (attempt {}/{}), requeueing: {}",
+            task_id,
+            new_retries,
+            max_retries,
+            message
+        );
+
+        if let Err(e) = download_task::Entity::update(download_task::ActiveModel {
+            id: Set(task_id.to_string()),
+            status: Set("QUEUED".to_string()),
+            retries: Set(new_retries),
+            error_message: Set(Some(message.to_string())),
+            ..Default::default()
+        })
+        .exec(db)
+        .await
+        {
+            tracing::error!("Failed to requeue task {}: {}", task_id, e);
+        }
+
+        let delay = RETRY_BASE_DELAY_SECS * RETRY_BACKOFF_MULTIPLIER.pow(new_retries as u32);
+        tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+
+        notify.notify_one();
+    }
+
+    async fn fail_task(
+        app: &AppHandle,
+        db: &DatabaseConnection,
+        task_id: &str,
+        new_retries: i32,
+        max_retries: i32,
+        message: &str,
+    ) {
+        tracing::error!(
+            "Task {} permanently failed after {} retries: {}",
+            task_id,
+            max_retries,
+            message
+        );
+
+        if let Err(e) = download_task::Entity::update(download_task::ActiveModel {
+            id: Set(task_id.to_string()),
+            status: Set("FAILED".to_string()),
+            retries: Set(new_retries),
+            error_message: Set(Some(message.to_string())),
+            ..Default::default()
+        })
+        .exec(db)
+        .await
+        {
+            tracing::error!("Failed to mark task {} as FAILED: {}", task_id, e);
+        }
+
+        if let Err(e) = app.emit("download-failed", task_id) {
+            tracing::warn!(
+                "Failed to emit download-failed event for task {}: {}",
                 task_id,
-                max_retries,
-                message
+                e
             );
-
-            if let Err(e) = download_task::Entity::update(download_task::ActiveModel {
-                id: Set(task_id.to_string()),
-                status: Set("FAILED".to_string()),
-                retries: Set(new_retries),
-                error_message: Set(Some(message)),
-                ..Default::default()
-            })
-            .exec(db)
-            .await
-            {
-                tracing::error!("Failed to mark task {} as FAILED: {}", task_id, e);
-            }
-
-            if let Err(e) = app.emit("download-failed", task_id) {
-                tracing::warn!(
-                    "Failed to emit download-failed event for task {}: {}",
-                    task_id,
-                    e
-                );
-            }
         }
     }
 }
