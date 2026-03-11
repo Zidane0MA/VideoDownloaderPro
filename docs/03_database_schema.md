@@ -3,6 +3,9 @@
 ## Overview
 The schema supports a "Wall" based feed system, handling multi-media posts (carousels), configurable sources, a download queue, user settings, and soft-delete (trash). Managed via **Sea-ORM** with `sea-orm-migration`.
 
+> [!NOTE]
+> Concurrency Support: The system accesses SQLite with `journal_mode=WAL` and `busy_timeout=5000` baked into the connection pool to guarantee that the UI "Wall" can query posts safely without ever locking the concurrent sync workers storing queue data.
+
 ---
 
 ## Tables
@@ -41,7 +44,7 @@ Defines *what* to download and *how*. Can represent a live feed, an archive task
 | `platform_id` | TEXT | FK → `platforms.id` | |
 | `creator_id` | INTEGER | FK → `creators.id`, NULLABLE | Optional link to creator |
 | `external_id` | TEXT | NULLABLE | External playlist or source ID |
-| `type` | TEXT | NOT NULL | Enum: `CHANNEL`, `PLAYLIST`, `KEYWORD` |
+| `source_type` | TEXT | NOT NULL | Enum: `CHANNEL`, `PLAYLIST`, `SAVED`, `LIKED` |
 | `feed_type` | TEXT | NULLABLE | Enum: `VIDEOS`, `SHORTS`, `STREAMS`, `REELS`, `POSTS` |
 | `name` | TEXT | NOT NULL | Name of the source |
 | `url` | TEXT | NOT NULL | Source URL |
@@ -204,6 +207,8 @@ erDiagram
 | `idx_media_checksum` | `(checksum)` | Duplicate detection |
 | `idx_download_tasks_status` | `(status, priority DESC)` | Queue scheduling |
 | `idx_download_tasks_created` | `(created_at)` | FIFO ordering |
+| `idx_src_chan` | `(creator_id, feed_type)` | Unique per feed (Partial: `feed_type IS NOT NULL`) |
+| `idx_src_url` | `(url)` | Unique per URL (Partial: `feed_type IS NULL`) |
 
 ---
 

@@ -323,6 +323,81 @@ interface Creator {
 
 ---
 
+### Source Operations
+
+#### `get_sources_command`
+Fetches all configured content sources, grouped by platform.
+
+```typescript
+const sources = await invoke<SourceResponse[]>('get_sources_command');
+```
+
+```typescript
+interface SourceResponse {
+  id: number;
+  platform_id: string;
+  creator_id: number | null;
+  name: string;
+  url: string;
+  source_type: 'CHANNEL' | 'PLAYLIST' | 'SAVED' | 'LIKED';
+  feed_type: 'VIDEOS' | 'SHORTS' | 'STREAMS' | 'REELS' | 'POSTS' | null;
+  sync_mode: 'ALL' | 'FROM_NOW' | 'DATE_RANGE' | 'LATEST_N';
+  is_active: boolean;
+  last_checked: string | null;
+  post_count: number;
+}
+```
+
+---
+
+#### `add_source_command`
+Adds one or more new sources based on a URL and optional feed types.
+
+```typescript
+const results = await invoke<AddSourceResponse[]>('add_source_command', {
+  request: AddSourceRequest
+});
+```
+
+```typescript
+interface AddSourceRequest {
+  url: string;
+  feed_types?: string[] | null;   // e.g. ['VIDEOS', 'SHORTS']
+  selected_ids?: string[] | null; // For queuing specific posts
+}
+
+interface AddSourceResponse {
+  source_id: number;
+  items_queued: number;
+}
+```
+
+---
+
+#### `delete_source_command`
+Deletes a source and orphans its posts.
+
+```typescript
+await invoke('delete_source_command', { sourceId: number });
+```
+
+---
+
+#### `update_source_command`
+Updates source properties.
+
+```typescript
+await invoke('update_source_command', {
+  request: {
+    source_id: number,
+    name?: string,
+    is_active?: boolean,
+  }
+});
+```
+
+---
+
 ### Settings Operations
 
 #### `get_settings`

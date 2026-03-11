@@ -185,18 +185,20 @@ User adds @mkbhd/shorts  → platform_id: youtube, external_id: mkbhd, feed_type
 User adds @mkbhd/videos  → platform_id: youtube, external_id: mkbhd, feed_type: VIDEOS → ❌ Duplicate rejected
 ```
 
-For personal feeds, dedup is on `(platform_id, source_type)` since there is only
-one "my saved" per platform:
+For personal feeds and standalone playlists where `feed_type` is NULL, dedup is
+enforced by the exact URL constraint.
 
-```
-User adds vdp://tiktok/me/saved  → platform: tiktok, type: SAVED → ✅ Created
-User adds vdp://tiktok/me/saved  → platform: tiktok, type: SAVED → ❌ Duplicate rejected
-```
-
-> [!TIP]
-> This means the current URL-based dedup in `add_source_command` needs to be
-> replaced with a composite key check constraint handled by `ON CONFLICT` in the DB. The unique constraint is
-> `(platform_id, external_id)` for channels.
+> [!WARNING]
+> While unique constraints are enforced by the DB via partial indexes, SQLite **does not support** targeting partial indexes in an `ON CONFLICT` clause.
+>
+> Therefore, the implementation in `store.rs` uses a **manual find-or-insert** pattern:
+> 1. Query for existing record by `(creator_id, feed_type)` or `url`.
+> 2. If it exists, update it.
+> 3. If not, insert a new record.
+>
+> The following partial indexes provide the safety net to prevent race conditions:
+> 1. `CREATE UNIQUE INDEX idx_src_chan ON sources(creator_id, feed_type) WHERE feed_type IS NOT NULL;`
+> 2. `CREATE UNIQUE INDEX idx_src_url ON sources(url) WHERE feed_type IS NULL;`
 
 ### Adding feeds to an existing channel
 

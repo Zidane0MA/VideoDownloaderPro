@@ -68,12 +68,14 @@
 - [x] Pass `DownloadOptions` (JSON) through UI → `create_download_task`
 - [x] Update download worker to parse `DownloadOptions` and apply correct yt-dlp flags (audio-only, subtitles, container override).
 
-### Phase 5.7: Sources & Playlists
-- [ ] Remove `--no-playlist` hardcode; add playlist expansion logic
-- [ ] Build CRUD IPC commands for `source` entity (channels, playlists, creator profiles)
-- [ ] Build frontend "Sources" section (list, add, sync trigger)
-- [ ] Link `post.source_id` when downloading from a source
+### Phase 5.7: Sources & Playlists (Completed)
+- [x] Remove `--no-playlist` hardcode; add playlist expansion logic
+- [x] Build CRUD IPC commands for `source` entity (channels, playlists, creator profiles)
+- [x] Build frontend "Sources" section (list, add, sync trigger)
+- [x] Link `post.source_id` when downloading from a source
 - [x] Custom API Extractors (TikTok Liked Videos)
+- [x] **Feature**: Multi-feed Source Architecture (Videos, Shorts, Streams)
+- [x] **Feature**: `vdp://` pseudo-URL protocol for personal feeds
 
 ### Phase 5.8: Trash & Lifecycle
 - [ ] Implement soft-delete (`deleted_at` instead of physical delete)
@@ -97,6 +99,5 @@
 - [ ] Installer Build (MSI, AppImage)
 
 *   **Browser Encryption**: L2 (Browser Import) is limited on Chrome/Edge due to App-Bound Encryption.
-*   **Documentation Discrepancies**: Many features in Phase 4/5 (Metadata Preview, Quality Selector, Search) and the Infrastructure (Health checks, Checksums, Hierarchy) are documented but missing from code.
-*   **IPC Contract Drift**: The documented API in `07_ipc_api_contract.md` significantly exceeds the implemented commands and events.
-*   **Source Entity Unused**: `sources` table exists with full schema but zero logic references it.
+*   **Documentation Alignment**: All core IPC contracts and schemas are now in sync with the Phase 5 implementation.
+*   **Infrastructure Gaps**: Remaining work primarily focuses on Phase 5.x (Checksums, Health Checks, Subfolder Org).

@@ -9,7 +9,7 @@ use tauri::{Manager, State};
 
 use crate::{
     auth::cookie_manager::CookieManager,
-    entity::{download_task, post, source},
+    entity::{creator, download_task, platform_session, post, source},
     metadata::{fetcher, models::YtDlpOutput, store},
     queue::DownloadQueue,
     AppState,
@@ -19,19 +19,30 @@ use crate::{
 pub struct SourceResponse {
     pub id: i64,
     pub platform_id: String,
+    pub creator_id: Option<i64>,
     pub name: String,
     pub url: String,
     pub source_type: String,
+    pub feed_type: Option<String>,
     pub sync_mode: String,
     pub is_active: bool,
     pub last_checked: Option<String>,
     pub post_count: i64,
+    pub is_self: bool,
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct AddSourceResponse {
     pub source_id: i64,
     pub items_queued: usize,
+}
+
+#[derive(Deserialize)]
+pub struct AddSourceRequest {
+    pub url: String,
+    pub feed_types: Option<Vec<String>>,
+    pub selected_ids: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -63,21 +74,72 @@ pub async fn get_sources_command(
         *count_map.entry(id).or_insert(0) += 1;
     }
 
+    // Fetch creators and sessions to enrich the UI
+    let mut creator_ids: Vec<i64> = sources.iter().filter_map(|s| s.creator_id).collect();
+    creator_ids.sort();
+    creator_ids.dedup();
+
+    let creators = creator::Entity::find()
+        .filter(creator::Column::Id.is_in(creator_ids))
+        .all(&state.db)
+        .await
+        .unwrap_or_default();
+
+    let mut creator_map = std::collections::HashMap::new();
+    for c in creators {
+        creator_map.insert(c.id, c);
+    }
+
+    let sessions = platform_session::Entity::find()
+        .all(&state.db)
+        .await
+        .unwrap_or_default();
+
+    let mut session_map = std::collections::HashMap::new();
+    for s in sessions {
+        session_map.insert(s.platform_id.clone(), s);
+    }
+
     let mut response = Vec::with_capacity(sources.len());
 
     for s in sources {
         let count = count_map.get(&s.id).copied().unwrap_or(0);
+        
+        let mut is_self = false;
+        let mut avatar_url = None;
+        let mut display_name = s.name.clone();
+
+        if let Some(c_id) = s.creator_id {
+            if let Some(creator) = creator_map.get(&c_id) {
+                is_self = creator.is_self;
+                
+                if is_self {
+                    // For self accounts, prefer session data
+                    if let Some(session) = session_map.get(&creator.platform_id) {
+                        display_name = session.username.clone().unwrap_or(display_name);
+                        avatar_url = session.avatar_url.clone();
+                    }
+                } else {
+                    // For public channels, use creator's avatar
+                    avatar_url = creator.avatar_path.clone();
+                }
+            }
+        }
 
         response.push(SourceResponse {
             id: s.id,
             platform_id: s.platform_id,
-            name: s.name,
+            creator_id: s.creator_id,
+            name: display_name,
             url: s.url,
             source_type: s.source_type,
+            feed_type: s.feed_type,
             sync_mode: s.sync_mode,
             is_active: s.is_active,
             last_checked: s.last_checked.map(|t| t.to_rfc3339()),
             post_count: count,
+            is_self,
+            avatar_url,
         });
     }
 
@@ -140,6 +202,8 @@ async fn handle_tiktok_source(
     state: &State<'_, AppState>,
     url: &str,
     section: crate::metadata::tiktok::TikTokSection,
+    source_type: Option<&str>,
+    feed_type: Option<&str>,
 ) -> Result<i64, String> {
     let username = crate::metadata::tiktok::helpers::extract_tiktok_username(url)
         .ok_or("Could not parse TikTok username from URL")?;
@@ -156,7 +220,7 @@ async fn handle_tiktok_source(
         .await
         .map_err(|e| e.to_string())?;
 
-    let saved_id = store::save_metadata(&state.db, output)
+    let saved_id = store::save_metadata(&state.db, output, source_type, feed_type)
         .await
         .map_err(|e| format!("DB Error: {}", e))?;
     Ok(saved_id)
@@ -166,6 +230,8 @@ async fn handle_ytdlp_source(
     app: &tauri::AppHandle,
     state: &State<'_, AppState>,
     url: &str,
+    source_type: Option<&str>,
+    feed_type: Option<&str>,
 ) -> Result<i64, String> {
     let cookie_manager = app.state::<Arc<CookieManager>>();
     let mut temp_cookie_path = None;
@@ -196,7 +262,7 @@ async fn handle_ytdlp_source(
         );
     }
 
-    let saved_id = store::save_metadata(&state.db, output)
+    let saved_id = store::save_metadata(&state.db, output, source_type, feed_type)
         .await
         .map_err(|e| format!("DB Error: {}", e))?;
     Ok(saved_id)
@@ -260,57 +326,105 @@ pub async fn add_source_command(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     queue: State<'_, DownloadQueue>,
-    url: String,
-    // Optional list of video IDs (from `PlaylistEntry.id`) to queue.
-    // When `None`, all videos in the playlist are queued.
-    selected_ids: Option<Vec<String>>,
-) -> Result<AddSourceResponse, String> {
-    let mut actual_url = url;
+    request: AddSourceRequest,
+) -> Result<Vec<AddSourceResponse>, String> {
+    let mut actual_url = request.url;
+    let mut responses = Vec::new();
 
-    // --- Intercept vdp:// pseudo-URLs ---
-    if actual_url.starts_with("vdp://tiktok/me/") {
-        use sea_orm::EntityTrait;
-        let session = crate::entity::platform_session::Entity::find_by_id("tiktok")
-            .one(&state.db)
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or("TikTok session not found. Please log in first.")?;
+    let feed_types = request.feed_types.unwrap_or_default();
 
-        let username = session.username.ok_or(
-            "Could not resolve your TikTok username from the active session. Please log in again.",
-        )?;
+    // If no specific feed_types provided, act as a single source (original behavior)
+    if feed_types.is_empty() {
+        let mut source_type_arg = None;
 
-        let section = actual_url.strip_prefix("vdp://tiktok/me/").unwrap();
-        // Convert pseudo-URL into a real TikTok profile URL for processing and DB storage
-        actual_url = format!("https://www.tiktok.com/@{}/{}", username, section);
+        // --- Intercept vdp:// pseudo-URLs ---
+        if actual_url.starts_with("vdp://tiktok/me/") {
+            use sea_orm::EntityTrait;
+            let session = crate::entity::platform_session::Entity::find_by_id("tiktok")
+                .one(&state.db)
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or("TikTok session not found. Please log in first.")?;
+
+            let username = session.username.ok_or(
+                "Could not resolve your TikTok username from the active session. Please log in again.",
+            )?;
+
+            let section = actual_url.strip_prefix("vdp://tiktok/me/").unwrap();
+            
+            if section == "saved" {
+                source_type_arg = Some(crate::constants::source_type::SAVED);
+            } else if section == "liked" {
+                source_type_arg = Some(crate::constants::source_type::LIKED);
+            }
+
+            // Convert pseudo-URL into a real TikTok profile URL for processing and DB storage
+            actual_url = format!("https://www.tiktok.com/@{}/{}", username, section);
+        }
+        // ------------------------------------
+
+        let tiktok_section = crate::metadata::tiktok::helpers::detect_tiktok_section(&actual_url);
+        let saved_id_res = if let Some(section) = tiktok_section {
+            handle_tiktok_source(&app, &state, &actual_url, section, source_type_arg, None).await
+        } else {
+            handle_ytdlp_source(&app, &state, &actual_url, source_type_arg, None).await
+        };
+
+        if let Ok(saved_id) = saved_id_res {
+            let items_queued = queue_posts(&state, &queue, saved_id, request.selected_ids).await?;
+            responses.push(AddSourceResponse { source_id: saved_id, items_queued });
+            return Ok(responses);
+        } else {
+            return Err(saved_id_res.unwrap_err());
+        }
     }
-    // ------------------------------------
 
-    // --- Dedup check: reject if a source with this URL already exists ---
-    let existing = source::Entity::find()
-        .filter(source::Column::Url.eq(actual_url.clone()))
-        .one(&state.db)
-        .await
-        .map_err(|e| format!("Database error: {}", e))?;
+    // MULTI-FEED SUPPORT
+    for feed_type in feed_types {
+        let mut feed_url = actual_url.clone();
+        let source_type_arg = Some(crate::constants::source_type::CHANNEL);
+        let feed_type_arg = Some(feed_type.as_str());
 
-    if let Some(existing_source) = existing {
-        return Err(format!(
-            "A source with this URL already exists: \"{}\"",
-            existing_source.name
-        ));
+        // Basic URL mutator based on feed type (since frontend won't mutate for multi-select)
+        let platform_id = crate::platform::detect_platform(&feed_url).unwrap_or("");
+        
+        if platform_id == "youtube" {
+            if !feed_url.ends_with('/') {
+                feed_url.push('/');
+            }
+            match feed_type.as_str() {
+                crate::constants::feed_type::VIDEOS => {}, // base URL works
+                crate::constants::feed_type::SHORTS => feed_url.push_str("shorts"),
+                crate::constants::feed_type::STREAMS => feed_url.push_str("streams"),
+                _ => feed_url.push_str(&feed_type.to_lowercase()),
+            }
+        }
+
+        let tiktok_section = crate::metadata::tiktok::helpers::detect_tiktok_section(&feed_url);
+        let saved_id_res = if let Some(section) = tiktok_section {
+            handle_tiktok_source(&app, &state, &feed_url, section, source_type_arg, feed_type_arg).await
+        } else {
+            handle_ytdlp_source(&app, &state, &feed_url, source_type_arg, feed_type_arg).await
+        };
+
+        match saved_id_res {
+            Ok(saved_id) => {
+                let items_queued = queue_posts(&state, &queue, saved_id, request.selected_ids.clone()).await.unwrap_or(0);
+                responses.push(AddSourceResponse {
+                    source_id: saved_id,
+                    items_queued,
+                });
+            }
+            Err(e) => {
+                tracing::warn!("Failed to add feed {}: {}", feed_type, e);
+                // Continue to the next feed type rather than failing the whole request
+            }
+        }
     }
 
-    let tiktok_section = crate::metadata::tiktok::helpers::detect_tiktok_section(&actual_url);
-    let saved_id = if let Some(section) = tiktok_section {
-        handle_tiktok_source(&app, &state, &actual_url, section).await?
-    } else {
-        handle_ytdlp_source(&app, &state, &actual_url).await?
-    };
+    if responses.is_empty() {
+        return Err("Failed to add any of the requested feeds.".to_string());
+    }
 
-    let items_queued = queue_posts(&state, &queue, saved_id, selected_ids).await?;
-
-    Ok(AddSourceResponse {
-        source_id: saved_id,
-        items_queued,
-    })
+    Ok(responses)
 }

@@ -1,5 +1,6 @@
 use sea_orm::{
-    ActiveValue::Set, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr,
+    EntityTrait, QueryFilter, TransactionTrait,
 };
 
 use super::models::{YtDlpOutput, YtDlpPlaylist, YtDlpVideo};
@@ -10,11 +11,13 @@ use crate::entity::{creator, post, source}; // media removed as unused for now
 pub async fn save_metadata(
     db: &DatabaseConnection,
     metadata: YtDlpOutput,
+    source_type: Option<&str>,
+    feed_type: Option<&str>,
 ) -> Result<i64, DbErr> {
     match metadata {
         YtDlpOutput::Video(v) => save_video(db, v).await,
         YtDlpOutput::VideoFallback(v) => save_video(db, v).await,
-        YtDlpOutput::Playlist(p) => save_playlist(db, p).await,
+        YtDlpOutput::Playlist(p) => save_playlist(db, p, source_type.unwrap_or(crate::constants::source_type::PLAYLIST), feed_type).await,
     }
 }
 
@@ -32,7 +35,7 @@ async fn save_video(db: &DatabaseConnection, v: YtDlpVideo) -> Result<i64, DbErr
     Ok(post_id)
 }
 
-async fn save_playlist(db: &DatabaseConnection, p: YtDlpPlaylist) -> Result<i64, DbErr> {
+async fn save_playlist(db: &DatabaseConnection, p: YtDlpPlaylist, source_type: &str, feed_type: Option<&str>) -> Result<i64, DbErr> {
     let txn = db.begin().await?;
 
     // 1. Process Creator
@@ -70,28 +73,49 @@ async fn save_playlist(db: &DatabaseConnection, p: YtDlpPlaylist) -> Result<i64,
     // 2. Upsert Source (Playlist)
     let external_id = p.id.clone();
 
-    let active_source = source::ActiveModel {
-        id: sea_orm::ActiveValue::NotSet,
-        platform_id: Set(inferred_platform.clone()),
-        creator_id: Set(creator_id),
-        external_id: Set(Some(external_id.clone())),
-        source_type: Set("PLAYLIST".to_string()),
-        name: Set(p.title),
-        url: Set(p.webpage_url.unwrap_or_default()),
-        sync_mode: Set("ALL".to_string()),
-        is_active: Set(true),
-        ..Default::default()
+    let source_url = p.webpage_url.unwrap_or_default();
+    let source_name = p.title;
+
+    // Manual upsert: SQLite partial indexes can't be targeted by ON CONFLICT.
+    // Check for existing source by (creator_id + feed_type) or by url.
+    let existing_source = if feed_type.is_some() && creator_id.is_some() {
+        source::Entity::find()
+            .filter(source::Column::CreatorId.eq(creator_id))
+            .filter(source::Column::FeedType.eq(feed_type))
+            .one(&txn)
+            .await?
+    } else {
+        source::Entity::find()
+            .filter(source::Column::Url.eq(&source_url))
+            .one(&txn)
+            .await?
     };
 
-    let result = source::Entity::insert(active_source)
-        .on_conflict(
-            sea_orm::sea_query::OnConflict::columns([source::Column::PlatformId, source::Column::ExternalId])
-                .update_columns([source::Column::Name, source::Column::Url])
-                .to_owned(),
-        )
-        .exec(&txn)
-        .await?;
-    let source_id = result.last_insert_id;
+    let source_id = if let Some(existing) = existing_source {
+        // Update existing source
+        let mut active: source::ActiveModel = existing.into();
+        active.name = Set(source_name);
+        active.url = Set(source_url);
+        let updated = active.update(&txn).await?;
+        updated.id
+    } else {
+        // Insert new source
+        let active_source = source::ActiveModel {
+            id: sea_orm::ActiveValue::NotSet,
+            platform_id: Set(inferred_platform.clone()),
+            creator_id: Set(creator_id),
+            external_id: Set(Some(external_id.clone())),
+            source_type: Set(source_type.to_string()),
+            feed_type: Set(feed_type.map(String::from)),
+            name: Set(source_name),
+            url: Set(source_url),
+            sync_mode: Set("ALL".to_string()),
+            is_active: Set(true),
+            ..Default::default()
+        };
+        let result = source::Entity::insert(active_source).exec(&txn).await?;
+        result.last_insert_id
+    };
 
     // 3. Process Entries
     if let Some(entries) = p.entries {

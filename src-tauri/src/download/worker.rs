@@ -205,7 +205,7 @@ impl DownloadWorker {
             tracing::info!("Task {} has no metadata (post_id), fetching...", task_id);
 
             match fetcher::fetch_metadata(&self.app, url, temp_cookie_path.as_ref()).await {
-                Ok(metadata) => match store::save_metadata(db, metadata).await {
+                Ok(metadata) => match store::save_metadata(db, metadata, None, None).await {
                     Ok(post_id) => {
                         tracing::info!(
                             "Metadata saved for task {}, linked to post {}",

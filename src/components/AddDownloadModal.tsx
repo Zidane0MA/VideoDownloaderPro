@@ -10,7 +10,7 @@ import type {
   ProcessedMetadata, DownloadOptions
 } from '../types/formats';
 import { formatFileSize } from '../types/formats';
-import { PLATFORM_CONTEXTS, PlatformConfig, ContextOption } from '../features/sources/config/platformContexts';
+import { PLATFORM_CONTEXTS, PlatformConfig } from '../features/sources/config/platformContexts';
 
 interface AddDownloadModalProps {
   isOpen: boolean;
@@ -26,7 +26,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
 
   // Context Selection (Smart Normalization)
   const [detectedPlatformConfig, setDetectedPlatformConfig] = useState<PlatformConfig | null>(null);
-  const [selectedContext, setSelectedContext] = useState<ContextOption | null>(null);
+  const [selectedContexts, setSelectedContexts] = useState<Set<string>>(new Set());
 
   // Phase 2: Selection state
   const [selectedVideoId, setSelectedVideoId] = useState<string>(''); // '' = Best Auto
@@ -70,7 +70,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
     setKeepActive(false);
     setKeepActive(false);
     setDetectedPlatformConfig(null);
-    setSelectedContext(null);
+    setSelectedContexts(new Set());
     onClose();
   };
 
@@ -84,14 +84,20 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
     }
 
     // Reset context state
-    setSelectedContext(null);
+    setSelectedContexts(new Set());
     setDetectedPlatformConfig(null);
 
     const strippedUrl = newUrl.replace(/^https?:\/\//, '').replace(/^www\./, '');
     for (const config of PLATFORM_CONTEXTS) {
       if (config.targetRegex.test(strippedUrl)) {
         setDetectedPlatformConfig(config);
-        setSelectedContext(config.options[0] || null);
+        if (config.options[0] && config.options[0].feedType) {
+          // Auto-select the default option if it has a feedType
+          setSelectedContexts(new Set([config.options[0].feedType]));
+        } else if (config.options[0]) {
+          // If no feedType (like standalone actions), use the ID for local state
+          setSelectedContexts(new Set([config.options[0].id]));
+        }
         break;
       }
     }
@@ -114,9 +120,16 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
 
     let finalUrl = url.trim();
 
-    // Apply Context Suffix if needed
-    if (detectedPlatformConfig && selectedContext) {
-      finalUrl = selectedContext.urlMutator(finalUrl);
+    // Note: for multi-select, we don't automatically mutate the URL if we select multiple
+    // We only mutate it if it's a single selection that mutates the probe URL.
+    // However, channels use their base URL for probing metadata, so we can just use the base url.
+    // If it's TikTok saved/liked, they only have 1 option.
+    if (detectedPlatformConfig && selectedContexts.size === 1) {
+      const selectedId = Array.from(selectedContexts)[0];
+      const opt = detectedPlatformConfig.options.find(o => o.id === selectedId || o.feedType === selectedId);
+      if (opt) {
+        finalUrl = opt.urlMutator(finalUrl);
+      }
     }
 
     try {
@@ -147,19 +160,28 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
     // If it's a playlist, send the new configuration to `add_source_command`
     if (metadata?.is_playlist) {
       try {
-        let finalUrl = url;
-        if (detectedPlatformConfig && selectedContext) {
-          finalUrl = selectedContext.urlMutator(finalUrl.trim());
+        let finalUrl = url.trim();
+        // If it's a single selection that requires mutator (like tiktok/saved), apply it
+        if (detectedPlatformConfig && selectedContexts.size === 1) {
+          const selectedId = Array.from(selectedContexts)[0];
+          const opt = detectedPlatformConfig.options.find(o => o.id === selectedId || o.feedType === selectedId);
+          if (opt) {
+            finalUrl = opt.urlMutator(finalUrl);
+          }
         }
 
-        const selectedIds = undefined; // For backend backwards-compatibility we pass absent or null
+        const feedTypes = Array.from(selectedContexts).filter(id => {
+            // Only pass actual FeedTypes to the backend, not generic options without feedType
+            const opt = detectedPlatformConfig?.options.find(o => o.id === id || o.feedType === id);
+            return opt?.feedType !== undefined;
+        });
+
         await invoke('add_source_command', {
-          url: finalUrl,
-          selectedIds,
-          // Note: Backend signature hasn't been updated for these yet, but future PR will read them:
-          // sourceType,
-          // maxItems: limitMode === 'all' ? null : maxItems,
-          // syncMode
+          request: {
+              url: finalUrl,
+              feed_types: feedTypes.length > 0 ? feedTypes : null,
+              selected_ids: null
+          }
         });
         handleClose();
       } catch (err) {
@@ -286,7 +308,8 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
 
               <div className="grid grid-cols-3 gap-2">
                 {detectedPlatformConfig.options.map(option => {
-                  const isSelected = selectedContext?.id === option.id;
+                  const val = option.feedType || option.id;
+                  const isSelected = selectedContexts.has(val);
 
                   let activeClasses = "";
                   if (option.colorClass === 'brand') activeClasses = "bg-brand-600/15 border-brand-500 text-brand-300 shadow-sm shadow-brand-500/10";
@@ -298,9 +321,22 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({ isOpen, onCl
                   return (
                     <button
                       key={option.id}
-                      onClick={() => setSelectedContext(option)}
-                      className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all duration-200 ${isSelected ? activeClasses : inactiveClasses}`}
+                      onClick={() => {
+                          setSelectedContexts(prev => {
+                              const next = new Set(prev);
+                              // Toggling logic
+                              if (next.has(val)) next.delete(val);
+                              else next.add(val);
+                              return next;
+                          });
+                      }}
+                      className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all duration-200 ${isSelected ? activeClasses : inactiveClasses} relative`}
                     >
+                      {isSelected && (
+                          <div className="absolute top-1.5 right-1.5">
+                              <Check size={12} className="stroke-[3]" />
+                          </div>
+                      )}
                       <option.icon size={20} className="mb-1.5" />
                       <span className="text-[11px] font-medium">{option.label}</span>
                     </button>

@@ -6,6 +6,7 @@ export interface ContextOption {
     label: string;
     icon: LucideIcon;
     colorClass: 'brand' | 'pink' | 'amber'; // Used by frontend to apply specific tailwind themes
+    feedType?: string; // Optional because some contexts don't use feed_type
     urlMutator: (baseUrl: string) => string;
 }
 
@@ -28,6 +29,7 @@ export const PLATFORM_CONTEXTS: PlatformConfig[] = [
                 label: 'Videos',
                 icon: Play,
                 colorClass: 'brand',
+                feedType: 'VIDEOS',
                 urlMutator: (url) => url
             },
             {
@@ -35,6 +37,7 @@ export const PLATFORM_CONTEXTS: PlatformConfig[] = [
                 label: 'Shorts',
                 icon: Film,
                 colorClass: 'brand',
+                feedType: 'SHORTS',
                 urlMutator: (url) => url.endsWith('/') ? `${url}shorts` : `${url}/shorts`
             },
             {
@@ -42,6 +45,7 @@ export const PLATFORM_CONTEXTS: PlatformConfig[] = [
                 label: 'Streams',
                 icon: Radio,
                 colorClass: 'brand',
+                feedType: 'STREAMS',
                 urlMutator: (url) => url.endsWith('/') ? `${url}streams` : `${url}/streams`
             }
         ]
@@ -57,6 +61,7 @@ export const PLATFORM_CONTEXTS: PlatformConfig[] = [
                 label: 'Public',
                 icon: LayoutGrid,
                 colorClass: 'brand',
+                feedType: 'VIDEOS',
                 urlMutator: (url) => url
             },
             {

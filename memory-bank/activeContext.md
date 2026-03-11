@@ -11,18 +11,16 @@ Deep technical audit revealed significant gaps between the Settings UI and backe
 - **Documentation Audit**: Deep dive into `/docs` revealed significant "Phantom APIs" and infrastructure gaps (Checksums, Health Checks, Subfolder Org).
 - **Media Viewer (Phase 5)**: Complete — custom video player, React Portal overlay, inter-post navigation.
 - **Settings Integration (Phase 5.5)**: `download_path` and `concurrent_downloads` connected. Concurrency now supports **live-reload** via `tokio::sync::watch`.
-- **Revised Roadmap**: Created Phase 5.x for Infrastructure Gaps and updated follow-up phases.
+- **Source Feed Architecture (Phase 5.7)**: Complete — refactored backend to support multi-feed sources (Videos, Shorts, etc.) per creator. Implemented grouped Channel Cards and multi-select feed UI.
+- **vdp:// Protocol**: Backend now intercepts and resolves `vdp://tiktok/me/` for authenticated personal feeds (Saved, Liked).
 
 ## Current State
-- **Phase 4 & 5**: Marked COMPLETED but audit found missing "Integrated" features (Metadata preview, Quality selector, Search/Filter).
-- **Settings Integration**: ✅ `download_path` and `concurrent_downloads` fully integrated. `trash_auto_clean_days` still disconnected.
-- **Format & Quality Selection (Phase 5.6)**: ✅ Complete. Professional UI built using `ProcessedMetadata` for video qualities, audio tracks, and subtitles. `DownloadOptions` JSON structure used for format selection in worker.
-- **Download Engine**: 🔴 Rate limit hardcoded (`5M`), playlists blocked (`--no-playlist`), Hierarchy/Checksums missing.
-- **IPC API Contract**: 🔴 Major drift; documented commands/events missing from backend.
-- **Source Entity**: 🔴 DB schema exists but completely unused.
-- **Sidecar Updates**: 🟡 Backend `update_yt_dlp()` exists but no IPC command exposed; UI button is a stub.
+- **Phase 1-5**: 🟢 **COMPLETED**. The application now has a fully working Wall Gallery, Media Viewer, Source CRUD, Settings UI, and Trash soft-delete lifecycle.
+- **Settings Integration**: ✅ `download_path`, `concurrent_downloads`, `rate_limit`, and `update_yt_dlp` are all fully wired to the backend via IPC commands.
+- **Format & Quality Selection**: ✅ Professional UI built using `ProcessedMetadata`. `DownloadOptions` JSON structure used for format selection in worker.
+- **Download Engine**: ✅ Configurable rate limits and format resolutions fully work. Playlists and complex extractions via internal APIs (TikTok likes) are scaling up.
+- **Source Architecture**: ✅ Foundational architecture complete. Grouped cards by `creator_id` with individual feed pills. Multi-feed creation logic handles partial unique indexing correctly via manual upsert.
 
 ## Next Steps
-1. **Phase 5.5 (Remaining)**: Wire `rate_limit` (configurable) and `update_yt_dlp()` IPC command.
-2. **Phase 5.7**: Enable playlist/channel support and Source CRUD.
-3. **Phase 5.8**: Implement Trash view and soft-delete lifecycle.
+1. **Phase 6 (Polish & Packaging)**: Refine error handling UX, disk space checks, finalize Tauri build settings, and configure updater workflows.
+2. **Phase 7 (Source Sync MVP)**: Implement the background worker scheduler to periodically poll active `sources` and download new posts into the timeline automatically.

@@ -11,6 +11,7 @@ pub struct Model {
     pub external_id: Option<String>,
     #[sea_orm(column_name = "type")]
     pub source_type: String,
+    pub feed_type: Option<String>,
     pub name: String,
     pub url: String,
     pub sync_mode: String,

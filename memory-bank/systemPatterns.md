@@ -32,6 +32,7 @@ graph TD
 
 ### 2. Data Persistence
 *   **SQLite + Sea-ORM:** Single source of truth for metadata, queue state, and settings. Uses Auto-Increment Integer Keys (`i64`) mapped via a natural `external_id` to allow quick pagination, referencing, and composite logical unique constraints.
+*   **Performance (WAL Mode):** The database connection string natively forces `?mode=rwc&journal_mode=WAL&busy_timeout=5000` to enable Write-Ahead Logging. This allows the backend metadata worker to smoothly download and continuously insert queue progress in the background without causing `database is locked` errors when the UI queries the Wall.
 *   **File System:** Media files are stored in a user-accessible directory (user owns the data). Thumbnails and JSON metadata are stored in `app_data` to keep the user folder clean.
 
 ### 3. Authentication (The 4-Layer System)
@@ -56,7 +57,13 @@ A progressive strategy to handle platform restrictions (YouTube, Instagram, etc.
 *   **Categorized Errors:** Network, Platform, Disk, Auth, internal.
 *   **Graceful Degradation:** The app suggests specific fixes (e.g., "Login required" opens the auth modal) rather than generic "Failed" messages.
 
+### 6. Multi-feed Source Management
+*   **Dual-Column Modeling:** Sources are modeled with both `source_type` (what it is: CHANNEL, PLAYLIST) and `feed_type` (which stream: VIDEOS, SHORTS). This avoids ambiguous state when a single creator has multiple content types.
+*   **Atomic Multi-Creation:** Adding a channel with multiple feeds (e.g. Videos + Shorts) creates N distinct rows in the `sources` table within a single transaction, sharing a common `creator_id`.
+*   **Manual Upsert Pattern:** Due to SQLite not supporting `ON CONFLICT` targeting for partial indexes, the system uses a "find-then-update-or-insert" pattern for sources, while using partial unique indexes as a database-level safety net.
+
 ## Design Patterns
 *   **Sidecar Pattern:** `yt-dlp`, `ffmpeg`, and `deno` are bundled binaries, managed and updated by the app.
 *   **Repository Pattern:** Sea-ORM entities abstract the database access.
+*   **Grouped Card Component:** Frontend UI groups multiple source feeds by their common `creator_id` into a single "Channel Card", using small pills to toggle activity for individual feeds.
 *   **Observer Pattern:** Frontend subscribes to backend state changes (progress, status).

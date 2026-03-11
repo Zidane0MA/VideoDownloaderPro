@@ -59,6 +59,7 @@ impl MigrationTrait for Migration {
                     .col(integer_null(Sources::CreatorId))
                     .col(string_null(Sources::ExternalId))
                     .col(string(Sources::Type).not_null())
+                    .col(string_null(Sources::FeedType))
                     .col(string(Sources::Name).not_null())
                     .col(string(Sources::Url).not_null())
                     .col(string(Sources::SyncMode).not_null())
@@ -357,6 +358,21 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        // Add Partial Unique Indexes for deduction
+        manager
+            .get_connection()
+            .execute_unprepared(
+                "CREATE UNIQUE INDEX idx_src_chan ON sources (creator_id, feed_type) WHERE feed_type IS NOT NULL;",
+            )
+            .await?;
+
+        manager
+            .get_connection()
+            .execute_unprepared(
+                "CREATE UNIQUE INDEX idx_src_url ON sources (url) WHERE feed_type IS NULL;",
+            )
+            .await?;
+
         // ── Seed: Platforms ───────────────────────────────────────
         let insert_platforms = Query::insert()
             .into_table(Platforms::Table)
@@ -465,6 +481,7 @@ pub enum Sources {
     CreatorId,
     ExternalId,
     Type,
+    FeedType,
     Name,
     Url,
     SyncMode,

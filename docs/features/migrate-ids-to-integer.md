@@ -86,9 +86,11 @@ must be preserved for dedup and linking, but moved to a dedicated column.
 Add `external_id TEXT NULL` to: `creators`, `posts`, `sources`.
 
 **Dedup logic must change:**
-- `creators`: dedup by `UNIQUE(platform_id, external_id)` instead of `id`
+- `creators`: dedup by `UNIQUE(platform_id, external_id)` where `external_id IS NOT NULL`, and allow `is_self` records with `NULL` external IDs.
 - `posts`: dedup by `UNIQUE(external_id)` instead of `id`
-- `sources`: dedup by `UNIQUE(external_id)` for yt-dlp sourced entries
+- `sources`: dedup using partial indexes to handle full channels vs playlists:
+  - `CREATE UNIQUE INDEX ... ON sources(creator_id, feed_type) WHERE feed_type IS NOT NULL;`
+  - `CREATE UNIQUE INDEX ... ON sources(url) WHERE feed_type IS NULL;`
 
 The `OnConflict` clauses in `metadata/store.rs` must be updated accordingly.
 
