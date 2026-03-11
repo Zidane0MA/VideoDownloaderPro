@@ -6,7 +6,6 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{Manager, State};
-use uuid::Uuid;
 
 use crate::{
     auth::cookie_manager::CookieManager,
@@ -18,7 +17,7 @@ use crate::{
 
 #[derive(Serialize)]
 pub struct SourceResponse {
-    pub id: String,
+    pub id: i64,
     pub platform_id: String,
     pub name: String,
     pub url: String,
@@ -31,13 +30,13 @@ pub struct SourceResponse {
 
 #[derive(Serialize)]
 pub struct AddSourceResponse {
-    pub source_id: String,
+    pub source_id: i64,
     pub items_queued: usize,
 }
 
 #[derive(Deserialize)]
 pub struct UpdateSourceRequest {
-    pub source_id: String,
+    pub source_id: i64,
     pub name: Option<String>,
     pub is_active: Option<bool>,
 }
@@ -51,11 +50,11 @@ pub async fn get_sources_command(
         .await
         .map_err(|e| format!("Database error: {}", e))?;
 
-    let mut count_map: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    let mut count_map: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
     let posts_source_ids = post::Entity::find()
         .select_only()
         .column(post::Column::SourceId)
-        .into_tuple::<Option<String>>()
+        .into_tuple::<Option<i64>>()
         .all(&state.db)
         .await
         .unwrap_or_default();
@@ -88,12 +87,12 @@ pub async fn get_sources_command(
 #[tauri::command]
 pub async fn delete_source_command(
     state: State<'_, AppState>,
-    source_id: String,
+    source_id: i64,
 ) -> Result<(), String> {
     // Detach posts from this source (set source_id = NULL) to avoid FK violation
     post::Entity::update_many()
-        .col_expr(post::Column::SourceId, Expr::value(Value::String(None)))
-        .filter(post::Column::SourceId.eq(source_id.clone()))
+        .col_expr(post::Column::SourceId, Expr::value(Value::BigInt(None)))
+        .filter(post::Column::SourceId.eq(source_id))
         .exec(&state.db)
         .await
         .map_err(|e| format!("Failed to detach posts: {}", e))?;
@@ -113,7 +112,7 @@ pub async fn update_source_command(
 ) -> Result<(), String> {
     // Build the update model with only the fields that were provided
     let mut active = source::ActiveModel {
-        id: Set(request.source_id.clone()),
+        id: Set(request.source_id),
         ..Default::default()
     };
 
@@ -141,7 +140,7 @@ async fn handle_tiktok_source(
     state: &State<'_, AppState>,
     url: &str,
     section: crate::metadata::tiktok::TikTokSection,
-) -> Result<String, String> {
+) -> Result<i64, String> {
     let username = crate::metadata::tiktok::helpers::extract_tiktok_username(url)
         .ok_or("Could not parse TikTok username from URL")?;
 
@@ -167,7 +166,7 @@ async fn handle_ytdlp_source(
     app: &tauri::AppHandle,
     state: &State<'_, AppState>,
     url: &str,
-) -> Result<String, String> {
+) -> Result<i64, String> {
     let cookie_manager = app.state::<Arc<CookieManager>>();
     let mut temp_cookie_path = None;
     let platform_id = crate::platform::detect_platform(url);
@@ -206,7 +205,7 @@ async fn handle_ytdlp_source(
 async fn queue_posts(
     state: &State<'_, AppState>,
     queue: &State<'_, DownloadQueue>,
-    source_id: String,
+    source_id: i64,
     selected_ids: Option<Vec<String>>,
 ) -> Result<usize, String> {
     let mut items_queued = 0;
@@ -226,15 +225,14 @@ async fn queue_posts(
         }
 
         if let Some(ref filter) = selection_filter {
-            if !filter.contains(&p.id) {
+            if !filter.contains(&p.external_id) {
                 continue;
             }
         }
 
         if p.status == "PENDING" {
-            let task_id = Uuid::new_v4().to_string();
             let new_task = download_task::ActiveModel {
-                id: Set(task_id),
+                id: sea_orm::ActiveValue::NotSet,
                 url: Set(p.original_url),
                 post_id: Set(Some(p.id)),
                 status: Set("QUEUED".to_string()),
@@ -309,7 +307,7 @@ pub async fn add_source_command(
         handle_ytdlp_source(&app, &state, &actual_url).await?
     };
 
-    let items_queued = queue_posts(&state, &queue, saved_id.clone(), selected_ids).await?;
+    let items_queued = queue_posts(&state, &queue, saved_id, selected_ids).await?;
 
     Ok(AddSourceResponse {
         source_id: saved_id,

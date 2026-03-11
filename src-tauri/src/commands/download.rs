@@ -2,7 +2,6 @@ use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::Serialize;
 use tauri::State;
-use uuid::Uuid;
 
 use crate::auth::cookie_manager::CookieManager;
 use crate::entity::{download_task, post, source};
@@ -25,7 +24,7 @@ pub struct CreateDownloadTaskRequest {
 
 #[derive(Clone, Serialize)]
 pub struct DownloadTaskInfo {
-    pub id: String,
+    pub id: i64,
     pub url: String,
     pub status: String,
     pub priority: i32,
@@ -43,7 +42,7 @@ pub struct DownloadTaskInfo {
     pub title: Option<String>,
     pub thumbnail: Option<String>,
     /// Playlist source id (if this task belongs to a playlist).
-    pub source_id: Option<String>,
+    pub source_id: Option<i64>,
     /// Playlist source name (if this task belongs to a playlist).
     pub source_name: Option<String>,
 }
@@ -56,7 +55,7 @@ impl DownloadTaskInfo {
                 let video: Result<YtDlpVideo, _> = serde_json::from_str(json);
                 video.ok().and_then(|v| v.best_thumbnail())
             });
-            (title, thumbnail, post.source_id.clone())
+            (title, thumbnail, post.source_id)
         } else {
             (None, None, None)
         };
@@ -90,12 +89,10 @@ pub async fn create_download_task(
     state: State<'_, AppState>,
     queue: State<'_, DownloadQueue>,
     request: CreateDownloadTaskRequest,
-) -> Result<String, String> {
-    let task_id = Uuid::new_v4().to_string();
-
+) -> Result<i64, String> {
     // 1. Create task in DB
     let new_task: download_task::ActiveModel = download_task::ActiveModel {
-        id: Set(task_id.clone()),
+        id: sea_orm::ActiveValue::NotSet,
         url: Set(request.url.clone()),
         status: Set("QUEUED".to_string()),
         priority: Set(MANUAL_TASK_PRIORITY), // Default high priority for manual
@@ -107,10 +104,12 @@ pub async fn create_download_task(
         ..Default::default()
     };
 
-    new_task
+    let result = new_task
         .insert(&state.db)
         .await
         .map_err(|e| format!("Database error: {}", e))?;
+    
+    let task_id = result.id;
 
     // 2. Notify queue scheduler
     queue.add_task();
@@ -124,15 +123,15 @@ pub async fn create_download_task(
 pub async fn cancel_download_task(
     state: State<'_, AppState>,
     queue: State<'_, DownloadQueue>,
-    task_id: String,
+    task_id: i64,
 ) -> Result<(), String> {
     // Try to cancel a running task
-    let was_running = queue.cancel_task(&task_id).await;
+    let was_running = queue.cancel_task(task_id).await;
 
     if !was_running {
         // Task may be QUEUED but not yet picked up — mark it directly
         download_task::Entity::update(download_task::ActiveModel {
-            id: Set(task_id.clone()),
+            id: Set(task_id),
             status: Set("CANCELLED".to_string()),
             ..Default::default()
         })
@@ -149,10 +148,10 @@ pub async fn cancel_download_task(
 pub async fn retry_download_task(
     state: State<'_, AppState>,
     queue: State<'_, DownloadQueue>,
-    task_id: String,
+    task_id: i64,
 ) -> Result<(), String> {
     // Only allow retry for FAILED or CANCELLED tasks
-    let task = download_task::Entity::find_by_id(&task_id)
+    let task = download_task::Entity::find_by_id(task_id)
         .one(&state.db)
         .await
         .map_err(|e| format!("Database error: {}", e))?
@@ -167,7 +166,7 @@ pub async fn retry_download_task(
 
     // Reset task
     download_task::Entity::update(download_task::ActiveModel {
-        id: Set(task_id.clone()),
+        id: Set(task_id),
         status: Set("QUEUED".to_string()),
         retries: Set(0),
         progress: Set(0.0),
@@ -202,15 +201,15 @@ pub async fn get_queue_status(
         .map_err(|e| format!("Database error: {}", e))?;
 
     // Collect unique source_ids so we can batch-load source names.
-    let source_ids: Vec<String> = tasks_with_posts
+    let source_ids: Vec<i64> = tasks_with_posts
         .iter()
-        .filter_map(|(_, post)| post.as_ref()?.source_id.clone())
+        .filter_map(|(_, post)| post.as_ref()?.source_id)
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
 
     // Batch-load source names into a lookup map.
-    let source_name_map: HashMap<String, String> = if source_ids.is_empty() {
+    let source_name_map: HashMap<i64, String> = if source_ids.is_empty() {
         HashMap::new()
     } else {
         source::Entity::find()
@@ -251,9 +250,9 @@ pub struct QueueStatusResponse {
 pub async fn pause_download_task(
     state: State<'_, AppState>,
     queue: State<'_, DownloadQueue>,
-    task_id: String,
+    task_id: i64,
 ) -> Result<(), String> {
-    let task = download_task::Entity::find_by_id(&task_id)
+    let task = download_task::Entity::find_by_id(task_id)
         .one(&state.db)
         .await
         .map_err(|e| format!("Database error: {}", e))?
@@ -264,7 +263,7 @@ pub async fn pause_download_task(
             // Update DB first to avoid race condition where manager sees "PROCESSING"
             // and marks it as CANCELLED
             if let Err(e) = download_task::Entity::update(download_task::ActiveModel {
-                id: Set(task_id.clone()),
+                id: Set(task_id),
                 status: Set("PAUSED".to_string()),
                 ..Default::default()
             })
@@ -275,11 +274,11 @@ pub async fn pause_download_task(
             }
 
             // Then cancel the running worker
-            queue.cancel_task(&task_id).await;
+            queue.cancel_task(task_id).await;
         }
         "QUEUED" => {
             download_task::Entity::update(download_task::ActiveModel {
-                id: Set(task_id.clone()),
+                id: Set(task_id),
                 status: Set("PAUSED".to_string()),
                 ..Default::default()
             })
@@ -303,9 +302,9 @@ pub async fn pause_download_task(
 pub async fn resume_download_task(
     state: State<'_, AppState>,
     queue: State<'_, DownloadQueue>,
-    task_id: String,
+    task_id: i64,
 ) -> Result<(), String> {
-    let task = download_task::Entity::find_by_id(&task_id)
+    let task = download_task::Entity::find_by_id(task_id)
         .one(&state.db)
         .await
         .map_err(|e| format!("Database error: {}", e))?
@@ -320,7 +319,7 @@ pub async fn resume_download_task(
 
     // Reset to QUEUED — yt-dlp's -c flag will resume partial downloads
     download_task::Entity::update(download_task::ActiveModel {
-        id: Set(task_id.clone()),
+        id: Set(task_id),
         status: Set("QUEUED".to_string()),
         error_message: Set(None),
         speed: Set(None),

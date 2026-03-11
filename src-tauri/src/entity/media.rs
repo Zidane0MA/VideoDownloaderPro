@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "media")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: String,
-    pub post_id: String,
+    #[sea_orm(primary_key, auto_increment = true)]
+    pub id: i64,
+    pub post_id: i64,
     #[sea_orm(column_name = "type")]
     pub media_type: String,
     pub file_path: String,

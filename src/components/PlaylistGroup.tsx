@@ -13,7 +13,7 @@ import {
 
 interface PlaylistGroupProps {
     sourceName: string;
-    sourceId: string;
+    sourceId: number;
     tasks: DownloadTask[];
 }
 

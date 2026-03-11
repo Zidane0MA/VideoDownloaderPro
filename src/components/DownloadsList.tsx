@@ -152,7 +152,7 @@ interface GroupedTaskListProps {
 const GroupedTaskList: React.FC<GroupedTaskListProps> = ({ tasks }) => {
   const { standaloneTasks, groups } = useMemo(() => {
     const standalone: DownloadTask[] = [];
-    const groupMap = new Map<string, { name: string; tasks: DownloadTask[] }>();
+    const groupMap = new Map<number, { name: string; tasks: DownloadTask[] }>();
 
     for (const task of tasks) {
       if (task.source_id && task.source_name) {

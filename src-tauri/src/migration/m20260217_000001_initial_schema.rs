@@ -26,8 +26,10 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Creators::Table)
                     .if_not_exists()
-                    .col(string(Creators::Id).primary_key())
+                    .col(integer(Creators::Id).auto_increment().primary_key())
                     .col(string(Creators::PlatformId).not_null())
+                    .col(string_null(Creators::ExternalId))
+                    .col(boolean(Creators::IsSelf).default(false).not_null())
                     .col(string(Creators::Name).not_null())
                     .col(string_null(Creators::Handle))
                     .col(string(Creators::Url).not_null())
@@ -52,9 +54,10 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Sources::Table)
                     .if_not_exists()
-                    .col(string(Sources::Id).primary_key())
+                    .col(integer(Sources::Id).auto_increment().primary_key())
                     .col(string(Sources::PlatformId).not_null())
-                    .col(string_null(Sources::CreatorId))
+                    .col(integer_null(Sources::CreatorId))
+                    .col(string_null(Sources::ExternalId))
                     .col(string(Sources::Type).not_null())
                     .col(string(Sources::Name).not_null())
                     .col(string(Sources::Url).not_null())
@@ -88,9 +91,10 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Posts::Table)
                     .if_not_exists()
-                    .col(string(Posts::Id).primary_key())
-                    .col(string(Posts::CreatorId).not_null())
-                    .col(string_null(Posts::SourceId))
+                    .col(integer(Posts::Id).auto_increment().primary_key())
+                    .col(integer(Posts::CreatorId).not_null())
+                    .col(integer_null(Posts::SourceId))
+                    .col(string(Posts::ExternalId).not_null().unique_key())
                     .col(string_null(Posts::Title))
                     .col(string_null(Posts::Description))
                     .col(string(Posts::OriginalUrl).not_null())
@@ -124,8 +128,8 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Media::Table)
                     .if_not_exists()
-                    .col(string(Media::Id).primary_key())
-                    .col(string(Media::PostId).not_null())
+                    .col(integer(Media::Id).auto_increment().primary_key())
+                    .col(integer(Media::PostId).not_null())
                     .col(string(Media::Type).not_null())
                     .col(string(Media::FilePath).not_null())
                     .col(string_null(Media::ThumbnailPath))
@@ -156,9 +160,9 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(DownloadTasks::Table)
                     .if_not_exists()
-                    .col(string(DownloadTasks::Id).primary_key())
+                    .col(integer(DownloadTasks::Id).auto_increment().primary_key())
                     .col(string(DownloadTasks::Url).not_null())
-                    .col(string_null(DownloadTasks::PostId))
+                    .col(integer_null(DownloadTasks::PostId))
                     .col(string(DownloadTasks::Status).default("QUEUED").not_null())
                     .col(
                         integer(DownloadTasks::Priority)
@@ -256,7 +260,31 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // ── Indexes ───────────────────────────────────────────────
+        // ── Indexes & Unique Constraints ───────────────────────────
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_creators_platform_ext")
+                    .table(Creators::Table)
+                    .col(Creators::PlatformId)
+                    .col(Creators::ExternalId)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_sources_platform_ext")
+                    .table(Sources::Table)
+                    .col(Sources::PlatformId)
+                    .col(Sources::ExternalId)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+
         manager
             .create_index(
                 Index::create()
@@ -420,6 +448,8 @@ pub enum Creators {
     Table,
     Id,
     PlatformId,
+    ExternalId,
+    IsSelf,
     Name,
     Handle,
     Url,
@@ -433,6 +463,7 @@ pub enum Sources {
     Id,
     PlatformId,
     CreatorId,
+    ExternalId,
     Type,
     Name,
     Url,
@@ -450,6 +481,7 @@ pub enum Posts {
     Id,
     CreatorId,
     SourceId,
+    ExternalId,
     Title,
     Description,
     OriginalUrl,

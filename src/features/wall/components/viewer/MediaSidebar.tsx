@@ -74,7 +74,7 @@ export function MediaSidebar({ post, media, onClose, isTrashMode }: MediaSidebar
                     <img src={post.creator_avatar} alt="Creator" className="w-12 h-12 rounded-full object-cover ring-2 ring-surface-700" />
                 ) : (
                     <div className="w-12 h-12 rounded-full bg-surface-700 flex items-center justify-center font-bold text-surface-400">
-                        {(post.creator_name || post.creator_id || '?')[0].toUpperCase()}
+                        {(post.creator_name || String(post.creator_id) || '?')[0].toUpperCase()}
                     </div>
                 )}
                 <div className="flex-1 overflow-hidden">

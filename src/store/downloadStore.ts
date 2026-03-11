@@ -8,8 +8,8 @@ interface DownloadState {
   // Actions
   setTasks: (tasks: DownloadTask[]) => void;
   addTask: (task: DownloadTask) => void;
-  updateTask: (id: string, updates: Partial<DownloadTask>) => void;
-  removeTask: (id: string) => void;
+  updateTask: (id: number, updates: Partial<DownloadTask>) => void;
+  removeTask: (id: number) => void;
   setQueuePaused: (isPaused: boolean) => void;
 }
 

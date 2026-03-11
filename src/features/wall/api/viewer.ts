@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 
-export async function deletePost(postId: string): Promise<void> {
+export async function deletePost(postId: number): Promise<void> {
     return await invoke('delete_post', { postId });
 }
 

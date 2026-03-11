@@ -4,7 +4,7 @@ mod tests {
     use crate::entity::{creator, post};
     use crate::metadata::models::{YtDlpOutput, YtDlpPlaylist, YtDlpVideo};
     use crate::metadata::store::save_metadata;
-    use sea_orm::EntityTrait;
+    use sea_orm::{EntityTrait, QueryFilter, ColumnTrait};
 
     #[tokio::test]
     async fn test_save_video_metadata() {
@@ -42,10 +42,10 @@ mod tests {
             .await
             .expect("Failed to save metadata");
 
-        assert_eq!(post_id, "video123");
+        assert_eq!(post_id, 1);
 
         // Verify DB content
-        let saved_post = post::Entity::find_by_id("video123")
+        let saved_post = post::Entity::find_by_id(post_id)
             .one(&db)
             .await
             .expect("DB error")
@@ -53,7 +53,8 @@ mod tests {
         assert_eq!(saved_post.title, Some("Test Video".to_string()));
         assert_eq!(saved_post.status, "PENDING"); // Should be PENDING
 
-        let saved_creator = creator::Entity::find_by_id("channel123")
+        let saved_creator = creator::Entity::find()
+            .filter(creator::Column::ExternalId.eq("channel123"))
             .one(&db)
             .await
             .expect("DB error")
@@ -106,20 +107,22 @@ mod tests {
         let source_id = save_metadata(&db, YtDlpOutput::Playlist(playlist))
             .await
             .expect("Failed to save playlist");
-        assert_eq!(source_id, "playlist1");
+        assert_eq!(source_id, 1);
 
         // Verify Source
         // Note: I need to import source entity to verify, but checking posts exists is good enough
-        let saved_post = post::Entity::find_by_id("v1")
+        let saved_post = post::Entity::find()
+            .filter(post::Column::ExternalId.eq("v1"))
             .one(&db)
             .await
             .expect("DB error")
             .unwrap();
-        assert_eq!(saved_post.source_id, Some("playlist1".to_string()));
+        assert_eq!(saved_post.source_id, Some(source_id));
         // URL should be populated from `url` fallback (webpage_url was None)
         assert_eq!(saved_post.original_url, "https://youtube.com/watch?v=v1");
 
-        let saved_creator = creator::Entity::find_by_id("pc1")
+        let saved_creator = creator::Entity::find()
+            .filter(creator::Column::ExternalId.eq("pc1"))
             .one(&db)
             .await
             .expect("DB error")

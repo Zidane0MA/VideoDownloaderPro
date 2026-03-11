@@ -22,8 +22,10 @@ Content creators (channels, profiles, accounts).
 
 | Column | Type | Constraints | Description |
 | :--- | :--- | :--- | :--- |
-| `id` | TEXT | PRIMARY KEY | Unique ID (e.g., YouTube Channel ID) |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Unique ID |
 | `platform_id` | TEXT | FK → `platforms.id` | |
+| `external_id` | TEXT | NULLABLE | The platform's original ID (e.g. YouTube Channel ID) |
+| `is_self` | BOOLEAN | DEFAULT 0 | True if this creator represents the authenticated user's profile |
 | `name` | TEXT | NOT NULL | Display name |
 | `handle` | TEXT | | e.g., @username |
 | `url` | TEXT | NOT NULL | Web URL |
@@ -35,10 +37,12 @@ Defines *what* to download and *how*. Can represent a live feed, an archive task
 
 | Column | Type | Constraints | Description |
 | :--- | :--- | :--- | :--- |
-| `id` | TEXT | PRIMARY KEY | Unique UUID |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Unique ID |
 | `platform_id` | TEXT | FK → `platforms.id` | |
-| `creator_id` | TEXT | FK → `creators.id`, NULLABLE | Optional link to creator |
+| `creator_id` | INTEGER | FK → `creators.id`, NULLABLE | Optional link to creator |
+| `external_id` | TEXT | NULLABLE | External playlist or source ID |
 | `type` | TEXT | NOT NULL | Enum: `CHANNEL`, `PLAYLIST`, `KEYWORD` |
+| `feed_type` | TEXT | NULLABLE | Enum: `VIDEOS`, `SHORTS`, `STREAMS`, `REELS`, `POSTS` |
 | `name` | TEXT | NOT NULL | Name of the source |
 | `url` | TEXT | NOT NULL | Source URL |
 | `sync_mode` | TEXT | NOT NULL | Enum: `ALL`, `FROM_NOW`, `DATE_RANGE`, `LATEST_N` |
@@ -55,9 +59,10 @@ Represents a single entry/upload (e.g., a Tweet, an IG Post, a YT Video containe
 
 | Column | Type | Constraints | Description |
 | :--- | :--- | :--- | :--- |
-| `id` | TEXT | PRIMARY KEY | Platform Post ID |
-| `creator_id` | TEXT | FK → `creators.id` | |
-| `source_id` | TEXT | FK → `sources.id`, **NULLABLE** | NULL for direct URL downloads |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Unique ID |
+| `external_id` | TEXT | UNIQUE | Platform Post ID |
+| `creator_id` | INTEGER | FK → `creators.id` | |
+| `source_id` | INTEGER | FK → `sources.id`, **NULLABLE** | NULL for direct URL downloads |
 | `title` | TEXT | | |
 | `description` | TEXT | | |
 | `original_url` | TEXT | NOT NULL | |
@@ -73,8 +78,8 @@ Individual media files attached to a post (supports carousels).
 
 | Column | Type | Constraints | Description |
 | :--- | :--- | :--- | :--- |
-| `id` | TEXT | PRIMARY KEY | Unique UUID |
-| `post_id` | TEXT | FK → `posts.id` | |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Unique ID |
+| `post_id` | INTEGER | FK → `posts.id` | |
 | `type` | TEXT | NOT NULL | Enum: `VIDEO`, `IMAGE`, `AUDIO` |
 | `file_path` | TEXT | NOT NULL | Absolute local path |
 | `thumbnail_path` | TEXT | | 300px thumbnail for Wall gallery |
@@ -92,18 +97,20 @@ Tracks individual download operations in the queue.
 
 | Column | Type | Constraints | Description |
 | :--- | :--- | :--- | :--- |
-| `id` | TEXT | PRIMARY KEY | Unique UUID |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Unique ID |
 | `url` | TEXT | NOT NULL | URL to download |
-| `post_id` | TEXT | FK → `posts.id`, NULLABLE | Linked after metadata fetch |
+| `post_id` | INTEGER | FK → `posts.id`, NULLABLE | Linked after metadata fetch |
 | `status` | TEXT | NOT NULL, DEFAULT `'QUEUED'` | Enum: `QUEUED`, `FETCHING_META`, `READY`, `DOWNLOADING`, `PAUSED`, `COMPLETED`, `FAILED`, `CANCELLED` |
 | `priority` | INTEGER | DEFAULT 0 | Higher = more urgent. Manual > sync |
-| `progress` | REAL | DEFAULT 0.0 | 0.0 to 1.0 |
+| `progress` | REAL | DEFAULT 0.0 | 0.0 to 100.0 |
 | `speed` | TEXT | | Current speed (e.g., "2.5 MiB/s") |
 | `eta` | TEXT | | Estimated time remaining |
 | `error_message` | TEXT | | Last error description |
 | `retries` | INTEGER | DEFAULT 0 | Number of retries attempted |
 | `max_retries` | INTEGER | DEFAULT 3 | Max allowed retries |
 | `format_selection` | TEXT | | User-selected format/quality |
+| `downloaded_bytes` | INTEGER | | |
+| `total_bytes` | INTEGER | | |
 | `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | |
 | `started_at` | DATETIME | | When download started |
 | `completed_at` | DATETIME | | When download finished |

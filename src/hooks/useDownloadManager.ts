@@ -47,7 +47,7 @@ export function useDownloadManager() {
       });
 
       // Task completion — authoritative status from backend
-      const unlistenCompleted = await listen<string>('download-completed', (event) => {
+      const unlistenCompleted = await listen<number>('download-completed', (event) => {
         updateTask(event.payload, {
           status: DownloadStatus.Completed,
           progress: 100,
@@ -59,7 +59,7 @@ export function useDownloadManager() {
       });
 
       // Task failure
-      const unlistenFailed = await listen<string>('download-failed', (event) => {
+      const unlistenFailed = await listen<number>('download-failed', (event) => {
         updateTask(event.payload, {
           status: DownloadStatus.Failed,
           speed: undefined,
@@ -70,7 +70,7 @@ export function useDownloadManager() {
       });
 
       // Task paused
-      const unlistenPaused = await listen<string>('download-paused', (event) => {
+      const unlistenPaused = await listen<number>('download-paused', (event) => {
         updateTask(event.payload, {
           status: DownloadStatus.Paused,
           speed: undefined,
@@ -80,7 +80,7 @@ export function useDownloadManager() {
       });
 
       // Task cancelled
-      const unlistenCancelled = await listen<string>('download-cancelled', (event) => {
+      const unlistenCancelled = await listen<number>('download-cancelled', (event) => {
         updateTask(event.payload, {
           status: DownloadStatus.Cancelled,
           speed: undefined,
@@ -128,7 +128,7 @@ export function useDownloadManager() {
     }
   };
 
-  const cancelDownload = async (taskId: string) => {
+  const cancelDownload = async (taskId: number) => {
     try {
       // Optimistic update
       updateTask(taskId, { status: DownloadStatus.Cancelled, speed: undefined, eta: undefined });
@@ -139,7 +139,7 @@ export function useDownloadManager() {
     }
   };
 
-  const pauseDownload = async (taskId: string) => {
+  const pauseDownload = async (taskId: number) => {
     try {
       // Optimistic update — clear stale speed/eta
       updateTask(taskId, { status: DownloadStatus.Paused, speed: undefined, eta: undefined });
@@ -150,7 +150,7 @@ export function useDownloadManager() {
     }
   };
 
-  const resumeDownload = async (taskId: string) => {
+  const resumeDownload = async (taskId: number) => {
     try {
       // Optimistic update — clear stale data
       updateTask(taskId, {
@@ -166,7 +166,7 @@ export function useDownloadManager() {
     }
   };
 
-  const retryDownload = async (taskId: string) => {
+  const retryDownload = async (taskId: number) => {
     try {
       await invoke('retry_download_task', { taskId });
       // Task will go back to QUEUED

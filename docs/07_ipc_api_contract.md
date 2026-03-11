@@ -14,7 +14,7 @@ Creates a new download task in the queue.
 
 ```typescript
 // Frontend
-const taskId = await invoke<string>('create_download_task', {
+const taskId = await invoke<number>('create_download_task', {
   url: string,
   formatSelection?: string,  // yt-dlp format ID, default: 'best'
 });
@@ -25,7 +25,7 @@ const taskId = await invoke<string>('create_download_task', {
 | `url` | string | ✅ | URL to download |
 | `formatSelection` | string | ❌ | JSON string of `DownloadOptions` (e.g., `{"format_id": "137", "audio_only": false, "container": "mp4"}`) or legacy plain string |
 
-**Returns:** `string` — UUID of the created task.
+**Returns:** `number` — Auto-incremented ID of the created task.
 **Errors:** `INVALID_URL`, `DUPLICATE_URL` (if post with same URL already exists).
 
 ---
@@ -46,9 +46,9 @@ interface QueueStatusResponse {
 }
 
 interface DownloadTask {
-  id: string;
+  id: number;
   url: string;
-  postId: string | null;
+  postId: number | null;
   status: 'QUEUED' | 'FETCHING_META' | 'READY' | 'DOWNLOADING' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
   priority: number;
   progress: number;       // 0.0 to 100.0 (Updated from 0.0-1.0 to match backend)
@@ -134,7 +134,7 @@ interface SubtitleTrack {
 Pauses an active download.
 
 ```typescript
-await invoke('pause_download_task', { taskId: string });
+await invoke('pause_download_task', { taskId: number });
 ```
 
 **Errors:** `TASK_NOT_FOUND`, `INVALID_STATE`.
@@ -145,7 +145,7 @@ await invoke('pause_download_task', { taskId: string });
 Resumes a paused download.
 
 ```typescript
-await invoke('resume_download_task', { taskId: string });
+await invoke('resume_download_task', { taskId: number });
 ```
 
 **Errors:** `TASK_NOT_FOUND`, `INVALID_STATE`.
@@ -174,7 +174,7 @@ await invoke('resume_queue');
 Cancels a download and cleans up partial files.
 
 ```typescript
-await invoke('cancel_download_task', { taskId: string });
+await invoke('cancel_download_task', { taskId: number });
 ```
 
 **Errors:** `TASK_NOT_FOUND`.
@@ -185,7 +185,7 @@ await invoke('cancel_download_task', { taskId: string });
 Retries a failed download.
 
 ```typescript
-await invoke('retry_download_task', { taskId: string });
+await invoke('retry_download_task', { taskId: number });
 ```
 
 **Errors:** `TASK_NOT_FOUND`, `INVALID_STATE`.
@@ -201,7 +201,7 @@ Fetches posts for the Wall view with pagination and filtering.
 const result = await invoke<PostsPage>('get_posts', {
   page?: number,          // Default: 1
   limit?: number,         // Default: 50
-  creatorId?: string,
+  creatorId?: number,
   platformId?: string,
   search?: string,        // Search in title/description
   includeDeleted?: boolean, // Default: false (for trash view)
@@ -219,11 +219,12 @@ interface PostsPage {
 }
 
 interface Post {
-  id: string;
-  creatorId: string;
+  id: number;
+  creatorId: number;
   creatorName: string;
   creatorAvatar: string | null;
-  sourceId: string | null;
+  sourceId: number | null;
+  externalId: string;
   title: string | null;
   description: string | null;
   originalUrl: string;
@@ -235,7 +236,7 @@ interface Post {
 }
 
 interface Media {
-  id: string;
+  id: number;
   type: 'VIDEO' | 'IMAGE' | 'AUDIO';
   filePath: string;          // Use convertFileSrc() for display
   thumbnailPath: string | null;
@@ -254,7 +255,7 @@ interface Media {
 Fetches a single post with all media.
 
 ```typescript
-const post = await invoke<Post>('get_post', { postId: string });
+const post = await invoke<Post>('get_post', { postId: number });
 ```
 
 ---
@@ -263,7 +264,7 @@ const post = await invoke<Post>('get_post', { postId: string });
 Soft-deletes a post (moves to trash).
 
 ```typescript
-await invoke('delete_post', { postId: string });
+await invoke('delete_post', { postId: number });
 ```
 
 ---
@@ -272,7 +273,7 @@ await invoke('delete_post', { postId: string });
 Restores a soft-deleted post from trash.
 
 ```typescript
-await invoke('restore_post', { postId: string });
+await invoke('restore_post', { postId: number });
 ```
 
 ---
@@ -281,7 +282,7 @@ await invoke('restore_post', { postId: string });
 Hard-deletes a post and optionally removes files from disk.
 
 ```typescript
-await invoke('permanently_delete_post', { postId: string });
+await invoke('permanently_delete_post', { postId: number });
 ```
 
 ---
@@ -308,8 +309,10 @@ const creators = await invoke<Creator[]>('get_creators', {
 
 ```typescript
 interface Creator {
-  id: string;
+  id: number;
   platformId: string;
+  externalId: string | null;
+  isSelf: boolean;
   name: string;
   handle: string | null;
   url: string;
@@ -483,8 +486,8 @@ Emitted during active downloads (~every 500ms).
 
 ```typescript
 interface DownloadProgressPayload {
-  taskId: string;
-  progress: number;  // 0.0 to 1.0
+  taskId: number;
+  progress: number;  // 0.0 to 100.0
   speed: string;     // "2.5 MiB/s"
   eta: string;       // "00:05:23"
   downloadedBytes: number;
@@ -499,7 +502,7 @@ Emitted on every state transition.
 
 ```typescript
 interface DownloadStatusPayload {
-  taskId: string;
+  taskId: number;
   oldStatus: string;
   newStatus: string;
   errorMessage: string | null;
@@ -568,7 +571,7 @@ Emitted when a download requires authentication and no valid cookies are availab
 
 ```typescript
 interface AuthRequiredPayload {
-  taskId: string;
+  taskId: number;
   platformId: string;
   url: string;
   errorCode: 'AUTH_001' | 'AUTH_002' | 'AUTH_003';

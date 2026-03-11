@@ -10,7 +10,7 @@ use crate::entity::{creator, post, source}; // media removed as unused for now
 pub async fn save_metadata(
     db: &DatabaseConnection,
     metadata: YtDlpOutput,
-) -> Result<String, DbErr> {
+) -> Result<i64, DbErr> {
     match metadata {
         YtDlpOutput::Video(v) => save_video(db, v).await,
         YtDlpOutput::VideoFallback(v) => save_video(db, v).await,
@@ -18,26 +18,24 @@ pub async fn save_metadata(
     }
 }
 
-async fn save_video(db: &DatabaseConnection, v: YtDlpVideo) -> Result<String, DbErr> {
+async fn save_video(db: &DatabaseConnection, v: YtDlpVideo) -> Result<i64, DbErr> {
     let txn = db.begin().await?;
 
     // 1. Process Creator
     let creator_id = upsert_creator(&txn, &v).await?;
 
     // 2. Process Post
-    let post_id = upsert_post(&txn, &v, &creator_id, None).await?;
+    let post_id = upsert_post(&txn, &v, creator_id, None).await?;
 
     txn.commit().await?;
 
     Ok(post_id)
 }
 
-async fn save_playlist(db: &DatabaseConnection, p: YtDlpPlaylist) -> Result<String, DbErr> {
+async fn save_playlist(db: &DatabaseConnection, p: YtDlpPlaylist) -> Result<i64, DbErr> {
     let txn = db.begin().await?;
 
-    // 1. Upsert Source (Playlist)
-    let source_id = p.id.clone();
-
+    // 1. Process Creator
     let inferred_platform = p
         .webpage_url
         .as_deref()
@@ -45,33 +43,38 @@ async fn save_playlist(db: &DatabaseConnection, p: YtDlpPlaylist) -> Result<Stri
         .unwrap_or("unknown")
         .to_string();
 
-    // Check if creator exists for the playlist uploader
-    let creator_id = if let (Some(id), Some(name)) = (&p.uploader_id, &p.uploader) {
+    let creator_id = if let (Some(ext_id), Some(name)) = (&p.uploader_id, &p.uploader) {
         let active_creator = creator::ActiveModel {
-            id: Set(id.clone()),
+            id: sea_orm::ActiveValue::NotSet,
             platform_id: Set(inferred_platform.clone()),
+            external_id: Set(Some(ext_id.clone())),
+            is_self: Set(false),
             name: Set(name.clone()),
             url: Set(p.webpage_url.clone().unwrap_or_default()),
             ..Default::default()
         };
 
-        creator::Entity::insert(active_creator)
+        let result = creator::Entity::insert(active_creator)
             .on_conflict(
-                sea_orm::sea_query::OnConflict::column(creator::Column::Id)
+                sea_orm::sea_query::OnConflict::columns([creator::Column::PlatformId, creator::Column::ExternalId])
                     .update_columns([creator::Column::Name, creator::Column::Url])
                     .to_owned(),
             )
             .exec(&txn)
             .await?;
-        Some(id.clone())
+        Some(result.last_insert_id)
     } else {
         None
     };
 
+    // 2. Upsert Source (Playlist)
+    let external_id = p.id.clone();
+
     let active_source = source::ActiveModel {
-        id: Set(source_id.clone()),
+        id: sea_orm::ActiveValue::NotSet,
         platform_id: Set(inferred_platform.clone()),
         creator_id: Set(creator_id),
+        external_id: Set(Some(external_id.clone())),
         source_type: Set("PLAYLIST".to_string()),
         name: Set(p.title),
         url: Set(p.webpage_url.unwrap_or_default()),
@@ -80,23 +83,23 @@ async fn save_playlist(db: &DatabaseConnection, p: YtDlpPlaylist) -> Result<Stri
         ..Default::default()
     };
 
-    source::Entity::insert(active_source)
+    let result = source::Entity::insert(active_source)
         .on_conflict(
-            sea_orm::sea_query::OnConflict::column(source::Column::Id)
+            sea_orm::sea_query::OnConflict::columns([source::Column::PlatformId, source::Column::ExternalId])
                 .update_columns([source::Column::Name, source::Column::Url])
                 .to_owned(),
         )
         .exec(&txn)
         .await?;
+    let source_id = result.last_insert_id;
 
-    // 2. Process Entries
+    // 3. Process Entries
     if let Some(entries) = p.entries {
         for entry in entries {
             match entry {
                 YtDlpOutput::Video(v) | YtDlpOutput::VideoFallback(v) => {
-                    // Link to source
                     let c_id = upsert_creator(&txn, &v).await?;
-                    upsert_post(&txn, &v, &c_id, Some(source_id.clone())).await?;
+                    upsert_post(&txn, &v, c_id, Some(source_id)).await?;
                 }
                 _ => {}
             }
@@ -108,12 +111,11 @@ async fn save_playlist(db: &DatabaseConnection, p: YtDlpPlaylist) -> Result<Stri
     Ok(source_id)
 }
 
-async fn upsert_creator(db: &impl ConnectionTrait, v: &YtDlpVideo) -> Result<String, DbErr> {
-    let id = v
+async fn upsert_creator(db: &impl ConnectionTrait, v: &YtDlpVideo) -> Result<i64, DbErr> {
+    let external_id = v
         .uploader_id
         .clone()
-        .or_else(|| v.channel_id.clone())
-        .unwrap_or_else(|| "unknown".to_string());
+        .or_else(|| v.channel_id.clone());
     let name = v
         .uploader
         .clone()
@@ -136,40 +138,43 @@ async fn upsert_creator(db: &impl ConnectionTrait, v: &YtDlpVideo) -> Result<Str
         .to_string();
 
     let active = creator::ActiveModel {
-        id: Set(id.clone()),
+        id: sea_orm::ActiveValue::NotSet,
         platform_id: Set(platform),
+        external_id: Set(external_id),
+        is_self: Set(false),
         name: Set(name),
         url: Set(url),
         ..Default::default()
     };
 
-    creator::Entity::insert(active)
+    let result = creator::Entity::insert(active)
         .on_conflict(
-            sea_orm::sea_query::OnConflict::column(creator::Column::Id)
+            sea_orm::sea_query::OnConflict::columns([creator::Column::PlatformId, creator::Column::ExternalId])
                 .update_columns([creator::Column::Name, creator::Column::Url])
                 .to_owned(),
         )
         .exec(db)
         .await?;
 
-    Ok(id)
+    Ok(result.last_insert_id)
 }
 
 async fn upsert_post(
     db: &impl ConnectionTrait,
     v: &YtDlpVideo,
-    creator_id: &str,
-    source_id: Option<String>,
-) -> Result<String, DbErr> {
-    let id = v.id.clone();
+    creator_id: i64,
+    source_id: Option<i64>,
+) -> Result<i64, DbErr> {
+    let external_id = v.id.clone();
 
     // Serialize full JSON for raw storage
     let raw_json = serde_json::to_string(v).ok();
 
     let active = post::ActiveModel {
-        id: Set(id.clone()),
-        creator_id: Set(creator_id.to_string()),
+        id: sea_orm::ActiveValue::NotSet,
+        creator_id: Set(creator_id),
         source_id: Set(source_id),
+        external_id: Set(external_id.clone()),
         title: Set(Some(v.title.clone())),
         description: Set(v.description.clone()),
         original_url: Set(v
@@ -184,9 +189,9 @@ async fn upsert_post(
         ..Default::default()
     };
 
-    post::Entity::insert(active)
+    let result = post::Entity::insert(active)
         .on_conflict(
-            sea_orm::sea_query::OnConflict::column(post::Column::Id)
+            sea_orm::sea_query::OnConflict::column(post::Column::ExternalId)
                 .update_columns([
                     post::Column::Title,
                     post::Column::Description,
@@ -199,7 +204,7 @@ async fn upsert_post(
         .exec(db)
         .await?;
 
-    Ok(id)
+    Ok(result.last_insert_id)
 }
 
 fn parse_date(date_str: &Option<String>) -> Option<chrono::DateTime<chrono::Utc>> {

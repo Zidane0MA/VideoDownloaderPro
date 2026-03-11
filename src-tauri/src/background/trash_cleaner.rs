@@ -57,7 +57,7 @@ async fn run_cleanup(db: &DatabaseConnection) -> Result<(), String> {
 
     for p in posts_to_delete {
         let medias = media::Entity::find()
-            .filter(media::Column::PostId.eq(&p.id))
+            .filter(media::Column::PostId.eq(p.id))
             .all(db)
             .await
             .unwrap_or_default();
@@ -74,11 +74,11 @@ async fn run_cleanup(db: &DatabaseConnection) -> Result<(), String> {
         }
 
         let _ = media::Entity::delete_many()
-            .filter(media::Column::PostId.eq(&p.id))
+            .filter(media::Column::PostId.eq(p.id))
             .exec(db)
             .await;
 
-        let _ = post::Entity::delete_by_id(&p.id).exec(db).await;
+        let _ = post::Entity::delete_by_id(p.id).exec(db).await;
     }
 
     Ok(())

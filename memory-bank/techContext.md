@@ -31,9 +31,10 @@
 *   **VS Code:** Recommended extensions (Tauri, Rust-Analyzer, Tailwind).
 
 ## Database Schema (Key Tables)
+*   **Keys:** Uses `INTEGER PRIMARY KEY AUTOINCREMENT` for all domain entities, linking via numerical IDs in foreign constraints, leaving string keys exclusively for platforms and settings entries.
 *   `platforms`: Supported sites (YouTube, Instagram, etc.).
-*   `creators`: Profiles/Channels.
-*   `sources`: Tracked playlists/queries.
+*   `creators`: Profiles/Channels (numerical `id`, `external_id`, `is_self`).
+*   `sources`: Tracked playlists/queries (numerical `id`, `external_id`).
 *   `posts`: Content metadata.
 *   `media`: Actual files (1:N with posts).
 *   `download_tasks`: Active queue state.

@@ -31,7 +31,7 @@ graph TD
 *   **Design System:** Dark-mode first, using a custom color palette in `tailwind.config.js`.
 
 ### 2. Data Persistence
-*   **SQLite + Sea-ORM:** Single source of truth for metadata, queue state, and settings.
+*   **SQLite + Sea-ORM:** Single source of truth for metadata, queue state, and settings. Uses Auto-Increment Integer Keys (`i64`) mapped via a natural `external_id` to allow quick pagination, referencing, and composite logical unique constraints.
 *   **File System:** Media files are stored in a user-accessible directory (user owns the data). Thumbnails and JSON metadata are stored in `app_data` to keep the user folder clean.
 
 ### 3. Authentication (The 4-Layer System)

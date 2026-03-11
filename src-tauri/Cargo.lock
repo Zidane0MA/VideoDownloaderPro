@@ -6243,6 +6243,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
+ "sqlx",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

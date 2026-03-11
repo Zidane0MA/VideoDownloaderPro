@@ -12,7 +12,6 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{watch, Mutex, Notify, OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
 
 /// Default order index for downloaded media
 const DEFAULT_MEDIA_ORDER_INDEX: i32 = 0;
@@ -38,7 +37,7 @@ pub struct DownloadQueue {
     /// Parent cancellation token — cancelling this stops the scheduler + all workers.
     shutdown_token: CancellationToken,
     /// Per-task cancellation tokens keyed by task ID.
-    task_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    task_tokens: Arc<Mutex<HashMap<i64, CancellationToken>>>,
     /// Global pause flag — when true, the scheduler stops picking up new tasks.
     paused: Arc<AtomicBool>,
     /// Receives live concurrency-limit updates from `update_setting`.
@@ -108,9 +107,9 @@ impl DownloadQueue {
     }
 
     /// Cancel a specific running task by ID.
-    pub async fn cancel_task(&self, task_id: &str) -> bool {
+    pub async fn cancel_task(&self, task_id: i64) -> bool {
         let tokens = self.task_tokens.lock().await;
-        if let Some(token) = tokens.get(task_id) {
+        if let Some(token) = tokens.get(&task_id) {
             token.cancel();
             true
         } else {
@@ -163,7 +162,7 @@ impl DownloadQueue {
 
         for task in stale_tasks {
             if let Err(e) = download_task::Entity::update(download_task::ActiveModel {
-                id: Set(task.id.clone()),
+                id: Set(task.id),
                 status: Set("QUEUED".to_string()),
                 ..Default::default()
             })
@@ -258,7 +257,7 @@ impl DownloadQueue {
 
         tracing::info!("Starting task: {}", task_model.id);
         let app = self.app_handle.clone();
-        let task_id = task_model.id.clone();
+        let task_id = task_model.id;
         let db = app.state::<AppState>().db.clone();
 
         // Setup cancellation token for this task
@@ -266,7 +265,7 @@ impl DownloadQueue {
         self.task_tokens
             .lock()
             .await
-            .insert(task_id.clone(), task_token.clone());
+            .insert(task_id, task_token.clone());
 
         // Optimistic locking
         let update_result = download_task::Entity::update_many()
@@ -278,7 +277,7 @@ impl DownloadQueue {
                 download_task::Column::StartedAt,
                 sea_orm::sea_query::Expr::value(Utc::now()),
             )
-            .filter(download_task::Column::Id.eq(&task_id))
+            .filter(download_task::Column::Id.eq(task_id))
             .filter(download_task::Column::Status.eq("QUEUED"))
             .exec(&db)
             .await;
@@ -329,7 +328,7 @@ impl DownloadQueue {
         _permit: OwnedSemaphorePermit, // Holds the semaphore permit until task is dropped
         task_token: CancellationToken,
     ) {
-        let task_id = task.id.clone();
+        let task_id = task.id;
         let db = app.state::<AppState>().db.clone();
 
         let (download_dir, rate_limit) = Self::resolve_download_settings(&app, &db).await;
@@ -348,7 +347,7 @@ impl DownloadQueue {
 
         match worker
             .execute_download(
-                task_id.clone(),
+                task_id,
                 task.url.clone(),
                 download_dir.clone(),
                 task.format_selection.clone(),
@@ -359,14 +358,20 @@ impl DownloadQueue {
             .await
         {
             Ok(res) => {
-                Self::handle_download_success(&app, &db, &task_id, &res).await;
-                Self::create_media_and_thumbnails(&app, &db, &task, &download_dir, &res).await;
+                Self::handle_download_success(&app, &db, task_id, &res).await;
+
+                // Re-fetch task to get the updated post_id from metadata resolution
+                if let Ok(Some(updated_task)) = download_task::Entity::find_by_id(task_id).one(&db).await {
+                    Self::create_media_and_thumbnails(&app, &db, &updated_task, &download_dir, &res).await;
+                } else {
+                    tracing::error!("Failed to fetch updated task {} for media creation", task_id);
+                }
             }
             Err(err) => {
                 Self::handle_download_error(
                     &app,
                     &db,
-                    &task_id,
+                    task_id,
                     &download_dir,
                     task.retries,
                     task.max_retries,
@@ -429,13 +434,13 @@ impl DownloadQueue {
     async fn handle_download_success(
         app: &AppHandle,
         db: &DatabaseConnection,
-        task_id: &str,
+        task_id: i64,
         res: &DownloadResult,
     ) {
         tracing::info!("Task completed: {}", task_id);
 
         if let Err(e) = download_task::Entity::update(download_task::ActiveModel {
-            id: Set(task_id.to_string()),
+            id: Set(task_id),
             status: Set("COMPLETED".to_string()),
             completed_at: Set(Some(Utc::now())),
             progress: Set(PROGRESS_COMPLETED),
@@ -470,7 +475,7 @@ impl DownloadQueue {
     ) {
         if let Some(ref post_id) = task.post_id {
             if let Err(e) = post::Entity::update(post::ActiveModel {
-                id: Set(post_id.clone()),
+                id: Set(*post_id),
                 status: Set("COMPLETED".to_string()),
                 downloaded_at: Set(Some(Utc::now())),
                 ..Default::default()
@@ -492,11 +497,9 @@ impl DownloadQueue {
                     _ => MEDIA_TYPE_VIDEO,
                 };
 
-                let media_id = Uuid::new_v4().to_string();
-
                 let media_model = media::ActiveModel {
-                    id: Set(media_id.clone()),
-                    post_id: Set(post_id.clone()),
+                    id: sea_orm::ActiveValue::NotSet,
+                    post_id: Set(*post_id),
                     media_type: Set(media_type.to_string()),
                     file_path: Set(file_path.to_string_lossy().to_string()),
                     order_index: Set(DEFAULT_MEDIA_ORDER_INDEX),
@@ -504,37 +507,38 @@ impl DownloadQueue {
                     ..Default::default()
                 };
 
-                if let Err(e) = media_model.insert(db).await {
-                    tracing::error!("Failed to create media row for post {}: {}", post_id, e);
-                } else {
-                    tracing::info!(
-                        "Media row created for post {} -> {}",
-                        post_id,
-                        file_path.display()
-                    );
+                match media_model.insert(db).await {
+                    Err(e) => tracing::error!("Failed to create media row for post {}: {}", post_id, e),
+                    Ok(inserted) => {
+                        tracing::info!(
+                            "Media row created for post {} -> {}",
+                            post_id,
+                            file_path.display()
+                        );
 
-                    if let Ok(ffmpeg) = crate::sidecar::get_binary_path(
-                        app,
-                        crate::sidecar::types::SidecarBinary::Ffmpeg,
-                    ) {
-                        let thumbs = crate::download::post_process::process_thumbnails(
-                            &ffmpeg, &file_path, media_type,
-                        )
-                        .await;
+                        if let Ok(ffmpeg) = crate::sidecar::get_binary_path(
+                            app,
+                            crate::sidecar::types::SidecarBinary::Ffmpeg,
+                        ) {
+                            let thumbs = crate::download::post_process::process_thumbnails(
+                                &ffmpeg, &file_path, media_type,
+                            )
+                            .await;
 
-                        if let Err(e) = media::Entity::update(media::ActiveModel {
-                            id: Set(media_id.clone()),
-                            thumbnail_path: Set(thumbs.thumbnail_path),
-                            ..Default::default()
-                        })
-                        .exec(db)
-                        .await
-                        {
-                            tracing::error!(
-                                "Failed to update media thumbnail for post {}: {}",
-                                post_id,
-                                e
-                            );
+                            if let Err(e) = media::Entity::update(media::ActiveModel {
+                                id: Set(inserted.id),
+                                thumbnail_path: Set(thumbs.thumbnail_path),
+                                ..Default::default()
+                            })
+                            .exec(db)
+                            .await
+                            {
+                                tracing::error!(
+                                    "Failed to update media thumbnail for post {}: {}",
+                                    post_id,
+                                    e
+                                );
+                            }
                         }
                     }
                 }
@@ -546,7 +550,7 @@ impl DownloadQueue {
     async fn handle_download_error(
         app: &AppHandle,
         db: &DatabaseConnection,
-        task_id: &str,
+        task_id: i64,
         download_dir: &std::path::Path,
         current_retries: i32,
         max_retries: i32,
@@ -599,7 +603,7 @@ impl DownloadQueue {
     async fn handle_task_cancellation(
         app: &AppHandle,
         db: &DatabaseConnection,
-        task_id: &str,
+        task_id: i64,
         download_dir: &std::path::Path,
         message: String,
         filename: Option<String>,
@@ -629,7 +633,7 @@ impl DownloadQueue {
         }
     }
 
-    async fn handle_task_paused(app: &AppHandle, db: &DatabaseConnection, task_id: &str) {
+    async fn handle_task_paused(app: &AppHandle, db: &DatabaseConnection, task_id: i64) {
         tracing::info!("Task paused: {}", task_id);
         if let Err(e) = download_task::Entity::update_many()
             .col_expr(
@@ -663,7 +667,7 @@ impl DownloadQueue {
     async fn handle_task_cancelled(
         app: &AppHandle,
         db: &DatabaseConnection,
-        task_id: &str,
+        task_id: i64,
         download_dir: &std::path::Path,
         message: String,
         filename: Option<String>,
@@ -724,7 +728,7 @@ impl DownloadQueue {
     async fn handle_task_retry(
         app: &AppHandle,
         db: &DatabaseConnection,
-        task_id: &str,
+        task_id: i64,
         current_retries: i32,
         max_retries: i32,
         message: String,
@@ -740,7 +744,7 @@ impl DownloadQueue {
 
     async fn requeue_task(
         db: &DatabaseConnection,
-        task_id: &str,
+        task_id: i64,
         new_retries: i32,
         max_retries: i32,
         message: &str,
@@ -755,7 +759,7 @@ impl DownloadQueue {
         );
 
         if let Err(e) = download_task::Entity::update(download_task::ActiveModel {
-            id: Set(task_id.to_string()),
+            id: Set(task_id),
             status: Set("QUEUED".to_string()),
             retries: Set(new_retries),
             error_message: Set(Some(message.to_string())),
@@ -776,7 +780,7 @@ impl DownloadQueue {
     async fn fail_task(
         app: &AppHandle,
         db: &DatabaseConnection,
-        task_id: &str,
+        task_id: i64,
         new_retries: i32,
         max_retries: i32,
         message: &str,
@@ -789,7 +793,7 @@ impl DownloadQueue {
         );
 
         if let Err(e) = download_task::Entity::update(download_task::ActiveModel {
-            id: Set(task_id.to_string()),
+            id: Set(task_id),
             status: Set("FAILED".to_string()),
             retries: Set(new_retries),
             error_message: Set(Some(message.to_string())),

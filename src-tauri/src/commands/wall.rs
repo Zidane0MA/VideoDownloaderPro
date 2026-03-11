@@ -23,9 +23,9 @@ pub struct PostsPage {
 
 #[derive(Serialize, Deserialize)]
 pub struct PostResponse {
-    pub id: String,
-    pub creator_id: String,
-    pub source_id: Option<String>,
+    pub id: i64,
+    pub creator_id: i64,
+    pub source_id: Option<i64>,
     pub title: Option<String>,
     pub description: Option<String>,
     pub original_url: String,
@@ -45,7 +45,7 @@ pub struct PostResponse {
 
 #[derive(Serialize, Deserialize)]
 pub struct MediaResponse {
-    pub id: String,
+    pub id: i64,
     pub media_type: String,
     pub file_path: String,
     pub thumbnail_path: Option<String>,
@@ -160,14 +160,14 @@ pub async fn reveal_in_explorer(
 }
 
 #[tauri::command]
-pub async fn delete_post(state: State<'_, AppState>, post_id: String) -> Result<(), String> {
+pub async fn delete_post(state: State<'_, AppState>, post_id: i64) -> Result<(), String> {
     // Soft delete: Just set deleted_at
     post::Entity::update_many()
         .col_expr(
             post::Column::DeletedAt,
             sea_orm::sea_query::Expr::value(chrono::Utc::now()),
         )
-        .filter(post::Column::Id.eq(&post_id))
+        .filter(post::Column::Id.eq(post_id))
         .exec(&state.db)
         .await
         .map_err(|e| format!("Failed to soft delete post: {}", e))?;
@@ -176,13 +176,13 @@ pub async fn delete_post(state: State<'_, AppState>, post_id: String) -> Result<
 }
 
 #[tauri::command]
-pub async fn restore_post(state: State<'_, AppState>, post_id: String) -> Result<(), String> {
+pub async fn restore_post(state: State<'_, AppState>, post_id: i64) -> Result<(), String> {
     post::Entity::update_many()
         .col_expr(
             post::Column::DeletedAt,
             sea_orm::sea_query::Expr::value(None::<chrono::DateTime<chrono::Utc>>),
         )
-        .filter(post::Column::Id.eq(&post_id))
+        .filter(post::Column::Id.eq(post_id))
         .exec(&state.db)
         .await
         .map_err(|e| format!("Failed to restore post: {}", e))?;
@@ -299,7 +299,7 @@ pub async fn empty_trash_command(state: State<'_, AppState>) -> Result<usize, St
     for p in trashed_posts {
         // Fetch media for this post
         let medias = media::Entity::find()
-            .filter(media::Column::PostId.eq(&p.id))
+            .filter(media::Column::PostId.eq(p.id))
             .all(&state.db)
             .await
             .unwrap_or_default();
@@ -318,18 +318,18 @@ pub async fn empty_trash_command(state: State<'_, AppState>) -> Result<usize, St
 
         // Hard delete media records
         let _ = media::Entity::delete_many()
-            .filter(media::Column::PostId.eq(&p.id))
+            .filter(media::Column::PostId.eq(p.id))
             .exec(&state.db)
             .await;
 
         // Hard delete download_tasks references
         let _ = crate::entity::download_task::Entity::delete_many()
-            .filter(crate::entity::download_task::Column::PostId.eq(&p.id))
+            .filter(crate::entity::download_task::Column::PostId.eq(p.id))
             .exec(&state.db)
             .await;
 
         // Hard delete post record
-        if post::Entity::delete_by_id(&p.id)
+        if post::Entity::delete_by_id(p.id)
             .exec(&state.db)
             .await
             .is_ok()

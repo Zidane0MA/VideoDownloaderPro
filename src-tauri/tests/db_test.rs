@@ -104,5 +104,5 @@ async fn test_migrations_apply_and_seed_data() {
         .expect("Failed to query indexes")
         .expect("No result from index count");
     let count: i32 = result.try_get_by_index(0).unwrap();
-    assert_eq!(count, 7, "Expected 7 custom indexes, got {}", count);
+    assert_eq!(count, 9, "Expected 9 custom indexes, got {}", count);
 }

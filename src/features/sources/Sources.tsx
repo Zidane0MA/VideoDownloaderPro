@@ -5,7 +5,7 @@ import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import { QUICK_ACTIONS } from './config/quickActions';
 
 export interface SourceResponse {
-    id: string;
+    id: number;
     platform_id: string;
     name: string;
     url: string;
@@ -43,7 +43,7 @@ export const Sources: React.FC = () => {
 
     // Confirm Modal state
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-    const [sourceToDelete, setSourceToDelete] = useState<{ id: string, name: string } | null>(null);
+    const [sourceToDelete, setSourceToDelete] = useState<{ id: number, name: string } | null>(null);
 
     const fetchSources = useCallback(async () => {
         try {
@@ -63,7 +63,7 @@ export const Sources: React.FC = () => {
         fetchSources();
     }, [fetchSources]);
 
-    const handleDeleteClick = (id: string, name: string) => {
+    const handleDeleteClick = (id: number, name: string) => {
         setSourceToDelete({ id, name });
         setIsConfirmOpen(true);
     };
@@ -104,7 +104,7 @@ export const Sources: React.FC = () => {
         setIsAdding(true);
         setError(null);
         try {
-            const result = await invoke<{ source_id: string; items_queued: number }>('add_source_command', { url: addUrl.trim() });
+            const result = await invoke<{ source_id: number; items_queued: number }>('add_source_command', { url: addUrl.trim() });
             setAddUrl('');
             setShowAddInput(false);
             fetchSources();

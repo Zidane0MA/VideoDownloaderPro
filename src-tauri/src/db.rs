@@ -19,7 +19,7 @@ pub async fn init_db(app_data_dir: PathBuf) -> Result<DatabaseConnection, DbErr>
     })?;
 
     let db_path = app_data_dir.join("videodownloaderpro.db");
-    let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
+    let db_url = format!("sqlite:{}?mode=rwc&journal_mode=WAL&busy_timeout=5000", db_path.display());
 
     tracing::info!(path = %db_path.display(), "Connecting to SQLite database");
 

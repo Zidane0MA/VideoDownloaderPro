@@ -1,5 +1,5 @@
 export interface Media {
-    id: string;
+    id: number;
     media_type: string;
     file_path: string;
     thumbnail_path: string | null;
@@ -11,9 +11,9 @@ export interface Media {
 }
 
 export interface Post {
-    id: string;
-    creator_id: string;
-    source_id: string | null;
+    id: number;
+    creator_id: number;
+    source_id: number | null;
     title: string | null;
     description: string | null;
     original_url: string;

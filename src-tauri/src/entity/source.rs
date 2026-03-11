@@ -4,10 +4,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "sources")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: String,
+    #[sea_orm(primary_key, auto_increment = true)]
+    pub id: i64,
     pub platform_id: String,
-    pub creator_id: Option<String>,
+    pub creator_id: Option<i64>,
+    pub external_id: Option<String>,
     #[sea_orm(column_name = "type")]
     pub source_type: String,
     pub name: String,

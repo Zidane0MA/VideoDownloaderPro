@@ -8,7 +8,7 @@ export enum DownloadStatus {
 }
 
 export interface DownloadTask {
-  id: string;
+  id: number;
   url: string;
   status: DownloadStatus | string; // Allow string for flexibility, but prefer enum
   priority: number;
@@ -25,7 +25,7 @@ export interface DownloadTask {
   total_bytes?: number;
   title?: string;
   thumbnail?: string;
-  source_id?: string;
+  source_id?: number | null;
   source_name?: string;
 }
 
@@ -35,7 +35,7 @@ export interface CreateDownloadRequest {
 }
 
 export interface DownloadProgressPayload {
-  task_id: string;
+  task_id: number;
   progress: number;
   speed: string;
   eta: string;

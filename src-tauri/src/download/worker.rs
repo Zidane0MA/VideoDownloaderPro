@@ -62,7 +62,7 @@ async fn kill_process_tree(child: &mut tokio::process::Child) {
 
 #[derive(Clone, Serialize, Debug)]
 pub struct DownloadProgressPayload {
-    pub task_id: String,
+    pub task_id: i64,
     pub progress: f64,
     pub speed: String,
     pub eta: String,
@@ -157,7 +157,7 @@ impl DownloadWorker {
 
     async fn prepare_auth_and_metadata(
         &self,
-        task_id: &str,
+        task_id: i64,
         url: &str,
         db: &DatabaseConnection,
     ) -> Result<Option<PathBuf>, DownloadError> {
@@ -213,7 +213,7 @@ impl DownloadWorker {
                             post_id
                         );
                         if let Err(e) = download_task::Entity::update(download_task::ActiveModel {
-                            id: Set(task_id.to_string()),
+                            id: Set(task_id),
                             post_id: Set(Some(post_id)),
                             ..Default::default()
                         })
@@ -357,7 +357,7 @@ impl DownloadWorker {
 
     async fn handle_progress_updates(
         &self,
-        task_id: String,
+        task_id: i64,
         mut child: tokio::process::Child,
         cancel_token: CancellationToken,
         db: DatabaseConnection,
@@ -431,7 +431,7 @@ impl DownloadWorker {
                                         last_emit = now;
 
                                         let payload = DownloadProgressPayload {
-                                            task_id: task_id.clone(),
+                                            task_id,
                                             progress: progress.progress,
                                             speed: progress.speed.clone().unwrap_or_default(),
                                             eta: progress.eta.clone().unwrap_or_default(),
@@ -472,7 +472,7 @@ impl DownloadWorker {
                                         }
 
                                         if let Err(e) = update
-                                            .filter(download_task::Column::Id.eq(task_id.clone()))
+                                            .filter(download_task::Column::Id.eq(task_id))
                                             .exec(&db)
                                             .await
                                         {
@@ -502,7 +502,7 @@ impl DownloadWorker {
     #[allow(clippy::too_many_arguments)]
     pub async fn execute_download(
         &self,
-        task_id: String,
+        task_id: i64,
         url: String,
         output_dir: PathBuf,
         format_selection: Option<String>,
@@ -510,7 +510,7 @@ impl DownloadWorker {
         cancel_token: CancellationToken,
         db: DatabaseConnection,
     ) -> Result<DownloadResult, DownloadError> {
-        let temp_cookie_path = self.prepare_auth_and_metadata(&task_id, &url, &db).await?;
+        let temp_cookie_path = self.prepare_auth_and_metadata(task_id, &url, &db).await?;
 
         let mut cmd = self.build_yt_dlp_command(
             &url,
@@ -556,7 +556,7 @@ impl DownloadWorker {
         });
 
         let progress_result = self
-            .handle_progress_updates(task_id.clone(), child, cancel_token, db)
+            .handle_progress_updates(task_id, child, cancel_token, db)
             .await;
 
         if let Err(e) = stderr_handle.await {
