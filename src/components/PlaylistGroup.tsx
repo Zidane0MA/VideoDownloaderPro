@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { DownloadTask, DownloadStatus } from '../types/download';
-import { DownloadItem } from './DownloadItem';
 import {
     ChevronDown,
     ChevronRight,
@@ -15,13 +14,16 @@ interface PlaylistGroupProps {
     sourceName: string;
     sourceId: number;
     tasks: DownloadTask[];
+    isExpanded: boolean;
+    onToggle: () => void;
 }
 
 export const PlaylistGroup: React.FC<PlaylistGroupProps> = ({
     sourceName,
     tasks,
+    isExpanded,
+    onToggle,
 }) => {
-    const [isExpanded, setIsExpanded] = useState(true);
 
     // Calculate aggregate stats
     const completed = tasks.filter(t => t.status === DownloadStatus.Completed).length;
@@ -57,7 +59,7 @@ export const PlaylistGroup: React.FC<PlaylistGroupProps> = ({
         <div className="rounded-xl border border-surface-700 bg-surface-800/60 overflow-hidden transition-all">
             {/* Group Header (clickable) */}
             <button
-                onClick={() => setIsExpanded(!isExpanded)}
+                onClick={onToggle}
                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-700/30 transition-colors text-left"
             >
                 {/* Expand Chevron */}
@@ -97,16 +99,7 @@ export const PlaylistGroup: React.FC<PlaylistGroupProps> = ({
                 </div>
             </button>
 
-            {/* Expanded Content */}
-            {isExpanded && (
-                <div className="border-t border-surface-700/50 bg-surface-900/30">
-                    {tasks.map(task => (
-                        <div key={task.id} className="px-2 py-1.5 first:pt-2 last:pb-2">
-                            <DownloadItem task={task} />
-                        </div>
-                    ))}
-                </div>
-            )}
+            {/* Expanded Content - REMOVED: Managed by Virtuoso now */}
         </div>
     );
 };

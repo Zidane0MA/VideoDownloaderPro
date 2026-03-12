@@ -3,6 +3,7 @@ import { DownloadTask } from '../types/download';
 
 interface DownloadState {
   tasks: Record<string, DownloadTask>;
+  expandedGroups: Record<number, boolean>;
   isQueuePaused: boolean;
 
   // Actions
@@ -11,10 +12,12 @@ interface DownloadState {
   updateTask: (id: number, updates: Partial<DownloadTask>) => void;
   removeTask: (id: number) => void;
   setQueuePaused: (isPaused: boolean) => void;
+  toggleGroup: (sourceId: number) => void;
 }
 
 export const useDownloadStore = create<DownloadState>((set) => ({
   tasks: {},
+  expandedGroups: {},
   isQueuePaused: false,
 
   setTasks: (taskList) => set({
@@ -46,4 +49,17 @@ export const useDownloadStore = create<DownloadState>((set) => ({
   }),
 
   setQueuePaused: (isPaused) => set({ isQueuePaused: isPaused }),
+ 
+  toggleGroup: (sourceId) => set((state) => {
+    // If it's undefined, it's currently expanded (default), so first toggle should make it false.
+    const current = state.expandedGroups[sourceId];
+    const nextValue = current === undefined ? false : !current;
+    
+    return {
+      expandedGroups: {
+        ...state.expandedGroups,
+        [sourceId]: nextValue
+      }
+    };
+  }),
 }));

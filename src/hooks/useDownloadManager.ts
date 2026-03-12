@@ -12,10 +12,12 @@ import {
 export function useDownloadManager() {
   const {
     tasks: tasksRecord,
+    expandedGroups,
     isQueuePaused,
     setTasks,
     updateTask,
-    setQueuePaused
+    setQueuePaused,
+    toggleGroup
   } = useDownloadStore();
 
   const taskKeys = Object.keys(tasksRecord).join(',');
@@ -220,6 +222,7 @@ export function useDownloadManager() {
 
   return {
     tasks,
+    expandedGroups,
     isQueuePaused,
     createDownload,
     cancelDownload,
@@ -228,6 +231,7 @@ export function useDownloadManager() {
     retryDownload,
     pauseQueue,
     resumeQueue,
+    toggleGroup,
     clearHistory,
     retryAllFailed,
     refreshQueue: fetchQueueStatus,

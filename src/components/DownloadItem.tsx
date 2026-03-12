@@ -15,7 +15,7 @@ interface DownloadItemProps {
   task: DownloadTask;
 }
 
-export const DownloadItem: React.FC<DownloadItemProps> = ({ task }) => {
+export const DownloadItem = React.memo(({ task }: DownloadItemProps) => {
   const { pauseDownload, resumeDownload, cancelDownload, retryDownload } = useDownloadManager();
 
   const getStatusColor = (status: string) => {
@@ -180,4 +180,6 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ task }) => {
       </div>
     </div>
   );
-};
+});
+
+DownloadItem.displayName = 'DownloadItem';
