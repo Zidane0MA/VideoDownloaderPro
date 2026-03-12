@@ -7,17 +7,17 @@ import { DownloadCloud, Play, Pause, History, Download, Trash2, RotateCw } from 
 import { GroupedVirtuoso } from 'react-virtuoso';
 
 export const DownloadsList: React.FC = () => {
-  const { 
-    tasks, 
-    expandedGroups, 
+  const {
+    tasks,
+    expandedGroups,
     toggleGroup,
-    isQueuePaused, 
-    pauseQueue, 
-    resumeQueue, 
-    clearHistory, 
-    retryAllFailed 
+    isQueuePaused,
+    pauseQueue,
+    resumeQueue,
+    clearHistory,
+    retryAllFailed
   } = useDownloadManager();
-  
+
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
 
   const activeTasks = useMemo(() => tasks.filter(task =>
@@ -37,7 +37,7 @@ export const DownloadsList: React.FC = () => {
   const pillOffset = activeTab === 'active' ? '4px' : 'calc(50% + 2px)';
 
   // ─── Grouped Logic for Virtuoso ───────────────────────────────────────────
-  
+
   const { flattenedGroups, groupCounts, allItems } = useMemo(() => {
     const standalone: DownloadTask[] = [];
     const groupMap = new Map<number, { name: string; tasks: DownloadTask[] }>();
@@ -76,7 +76,7 @@ export const DownloadsList: React.FC = () => {
     for (const [sourceId, g] of groups) {
       const isExpanded = expandedGroups[sourceId] !== false; // Default to true
       flattenedGroups.push({ sourceId, name: g.name, tasks: g.tasks });
-      
+
       if (isExpanded) {
         groupCounts.push(g.tasks.length);
         g.tasks.forEach((task, index) => {
@@ -178,9 +178,10 @@ export const DownloadsList: React.FC = () => {
             groupContent={(index) => {
               const group = flattenedGroups[index];
               if (!group) return null;
-              if (group.sourceId === -1) return <div className="h-4" />; // Spacer for standalone
+              if (group.sourceId === -1) return null; // Spacer handled by item margin
+              const isExpanded = expandedGroups[group.sourceId] !== false;
               return (
-                <div className="py-2 bg-surface-900 sticky top-0 z-20">
+                <div className={`bg-surface-900 sticky top-0 z-20 ${!isExpanded ? 'pb-3' : ''}`}>
                   <PlaylistGroup
                     sourceName={group.name}
                     sourceId={group.sourceId}
@@ -194,12 +195,12 @@ export const DownloadsList: React.FC = () => {
             itemContent={(index) => {
               const itemData = allItems[index];
               if (!itemData) return null;
-              
+
               const { task, isStandalone, isFirst, isLast } = itemData;
 
               if (isStandalone) {
                 return (
-                  <div className="px-1 py-1 mb-3">
+                  <div className="px-0.5 pb-3">
                     <DownloadItem task={task} />
                   </div>
                 );
@@ -207,14 +208,16 @@ export const DownloadsList: React.FC = () => {
 
               // Visual grouping for playlist items
               return (
-                <div 
-                  className={`
-                    px-2 py-1.5 bg-surface-800/60 border-x border-surface-700 
-                    ${isFirst ? 'border-t border-surface-700/50 pt-2' : ''} 
-                    ${isLast ? 'rounded-b-xl border-b pb-2 mb-3' : ''}
-                  `}
-                >
-                  <DownloadItem task={task} />
+                <div className={isLast ? "pb-3" : ""}>
+                  <div
+                    className={`
+                      px-2 bg-surface-800/30 border-x border-surface-700 
+                      ${isFirst ? 'pt-3' : 'pt-1.5'} 
+                      ${isLast ? 'rounded-b-xl border-b pb-3' : 'pb-1.5'}
+                    `}
+                  >
+                    <DownloadItem task={task} />
+                  </div>
                 </div>
               );
             }}

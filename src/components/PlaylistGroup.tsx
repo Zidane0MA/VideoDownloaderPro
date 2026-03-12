@@ -56,10 +56,10 @@ export const PlaylistGroup: React.FC<PlaylistGroupProps> = ({
     };
 
     return (
-        <div 
+        <div
             className={`
                 border border-surface-700 bg-surface-800/60 overflow-hidden transition-all
-                ${isExpanded ? 'rounded-t-xl border-b-0' : 'rounded-xl mb-3'}
+                ${isExpanded ? 'rounded-t-xl border-b-surface-700/50' : 'rounded-xl'}
             `}
         >
             {/* Group Header (clickable) */}
