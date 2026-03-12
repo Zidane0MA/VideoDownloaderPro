@@ -56,7 +56,12 @@ export const PlaylistGroup: React.FC<PlaylistGroupProps> = ({
     };
 
     return (
-        <div className="rounded-xl border border-surface-700 bg-surface-800/60 overflow-hidden transition-all">
+        <div 
+            className={`
+                border border-surface-700 bg-surface-800/60 overflow-hidden transition-all
+                ${isExpanded ? 'rounded-t-xl border-b-0' : 'rounded-xl mb-3'}
+            `}
+        >
             {/* Group Header (clickable) */}
             <button
                 onClick={onToggle}

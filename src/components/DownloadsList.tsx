@@ -61,13 +61,15 @@ export const DownloadsList: React.FC = () => {
     const groups = Array.from(groupMap.entries());
     const flattenedGroups: { sourceId: number; name: string; tasks: DownloadTask[] }[] = [];
     const groupCounts: number[] = [];
-    const allItems: DownloadTask[] = [];
+    const allItems: { task: DownloadTask; isStandalone: boolean; isFirst: boolean; isLast: boolean }[] = [];
 
     // Add Standalone first (or as a single group)
     if (standalone.length > 0) {
       flattenedGroups.push({ sourceId: -1, name: 'Standalone', tasks: standalone });
       groupCounts.push(standalone.length);
-      allItems.push(...standalone);
+      standalone.forEach(task => {
+        allItems.push({ task, isStandalone: true, isFirst: false, isLast: false });
+      });
     }
 
     // Add actual playlist groups
@@ -77,7 +79,14 @@ export const DownloadsList: React.FC = () => {
       
       if (isExpanded) {
         groupCounts.push(g.tasks.length);
-        allItems.push(...g.tasks);
+        g.tasks.forEach((task, index) => {
+          allItems.push({
+            task,
+            isStandalone: false,
+            isFirst: index === 0,
+            isLast: index === g.tasks.length - 1
+          });
+        });
       } else {
         groupCounts.push(0);
       }
@@ -183,10 +192,28 @@ export const DownloadsList: React.FC = () => {
               );
             }}
             itemContent={(index) => {
-              const task = allItems[index];
-              if (!task) return null;
+              const itemData = allItems[index];
+              if (!itemData) return null;
+              
+              const { task, isStandalone, isFirst, isLast } = itemData;
+
+              if (isStandalone) {
+                return (
+                  <div className="px-1 py-1 mb-3">
+                    <DownloadItem task={task} />
+                  </div>
+                );
+              }
+
+              // Visual grouping for playlist items
               return (
-                <div className="px-1 py-1">
+                <div 
+                  className={`
+                    px-2 py-1.5 bg-surface-800/60 border-x border-surface-700 
+                    ${isFirst ? 'border-t border-surface-700/50 pt-2' : ''} 
+                    ${isLast ? 'rounded-b-xl border-b pb-2 mb-3' : ''}
+                  `}
+                >
                   <DownloadItem task={task} />
                 </div>
               );
