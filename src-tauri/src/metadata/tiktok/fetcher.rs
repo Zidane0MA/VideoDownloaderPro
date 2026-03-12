@@ -287,7 +287,7 @@ impl TikTokFetcher {
             }
 
             let text = response.text().await?;
-            
+
             tracing::info!(
                 "TikTok API raw response for {} (page {}): {}",
                 config.api_path,
@@ -297,12 +297,16 @@ impl TikTokFetcher {
 
             let list_response: TikTokItemListResponse =
                 serde_json::from_str(&text).map_err(|e| TikTokError::Parse(e.to_string()))?;
-            
+
             tracing::info!(
                 "Parsed response — status_code: {:?}, has_more: {:?}, item_count: {}",
                 list_response.status_code,
                 list_response.has_more,
-                list_response.item_list.as_ref().map(|l| l.len()).unwrap_or(0)
+                list_response
+                    .item_list
+                    .as_ref()
+                    .map(|l| l.len())
+                    .unwrap_or(0)
             );
 
             // Extract pagination state before consuming item_list by value
@@ -515,13 +519,22 @@ mod tests {
     #[ignore]
     async fn test_live_tiktok_favorites() {
         use reqwest::header::{HeaderMap, HeaderValue, COOKIE, REFERER, USER_AGENT};
-        let app_data_dir = std::path::PathBuf::from(std::env::var("APPDATA").unwrap()).join("com.videodownloaderpro.app");
+        let app_data_dir = std::path::PathBuf::from(std::env::var("APPDATA").unwrap())
+            .join("com.videodownloaderpro.app");
         let db_path = app_data_dir.join("videodownloaderpro.db");
-        let db = sea_orm::Database::connect(&format!("sqlite:{}?mode=rwc", db_path.display())).await.unwrap();
+        let db = sea_orm::Database::connect(&format!("sqlite:{}?mode=rwc", db_path.display()))
+            .await
+            .unwrap();
 
         use sea_orm::EntityTrait;
-        let session: crate::entity::platform_session::Model = crate::entity::platform_session::Entity::find_by_id("tiktok").one(&db).await.unwrap().unwrap();
-        let netscape_cookies = crate::auth::encryption::decrypt_string(&session.encrypted_cookies.unwrap()).unwrap();
+        let session: crate::entity::platform_session::Model =
+            crate::entity::platform_session::Entity::find_by_id("tiktok")
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap();
+        let netscape_cookies =
+            crate::auth::encryption::decrypt_string(&session.encrypted_cookies.unwrap()).unwrap();
         let cookie_header = crate::metadata::tiktok::helpers::netscape_to_header(&netscape_cookies);
         let username = session.username.unwrap();
 
@@ -529,12 +542,20 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_STR));
         headers.insert(COOKIE, HeaderValue::from_str(&cookie_header).unwrap());
-        headers.insert(REFERER, HeaderValue::from_str(&format!("https://www.tiktok.com/@{}", username)).unwrap());
+        headers.insert(
+            REFERER,
+            HeaderValue::from_str(&format!("https://www.tiktok.com/@{}", username)).unwrap(),
+        );
 
         let client = reqwest::Client::new();
-        let resp = client.get(&profile_url).headers(headers).send().await.unwrap();
+        let resp = client
+            .get(&profile_url)
+            .headers(headers)
+            .send()
+            .await
+            .unwrap();
         let html = resp.text().await.unwrap();
-        
+
         let marker = "\"__DEFAULT_SCOPE__\":";
         if let Some(pos) = html.find(marker) {
             let start = html[..pos].rfind('{').unwrap();
@@ -543,29 +564,40 @@ mod tests {
                 let json_str = &rest[..end];
                 // Clean up any trailing HTML chars
                 let clean_json = if json_str.ends_with("\">") {
-                    &json_str[..json_str.len()-2]
+                    &json_str[..json_str.len() - 2]
                 } else {
                     json_str
                 };
-                
-                let v: serde_json::Value = serde_json::from_str(clean_json).unwrap_or(serde_json::Value::Null);
+
+                let v: serde_json::Value =
+                    serde_json::from_str(clean_json).unwrap_or(serde_json::Value::Null);
                 if v.is_object() {
                     let default_scope = &v["__DEFAULT_SCOPE__"];
                     if default_scope.is_object() {
                         let keys: Vec<_> = default_scope.as_object().unwrap().keys().collect();
                         println!("Keys in __DEFAULT_SCOPE__: {:?}", keys);
-                        
-                        if let Some(items) = default_scope.get("webapp.user-detail").and_then(|d| d.get("userInfo")) {
+
+                        if let Some(_items) = default_scope
+                            .get("webapp.user-detail")
+                            .and_then(|d| d.get("userInfo"))
+                        {
                             println!("Found userInfo!");
                         }
                         if let Some(items) = default_scope.get("webapp.video-detail") {
-                            println!("Found video-detail: {:?}", items.as_object().unwrap().keys());
+                            println!(
+                                "Found video-detail: {:?}",
+                                items.as_object().unwrap().keys()
+                            );
                         }
                         if let Some(item_module) = default_scope.get("ItemModule") {
                             println!("Found ItemModule!");
-                            let item_keys: Vec<_> = item_module.as_object().unwrap().keys().collect();
+                            let item_keys: Vec<_> =
+                                item_module.as_object().unwrap().keys().collect();
                             println!("Number of items: {}", item_keys.len());
-                            println!("Sample Item IDs: {:?}", item_keys.into_iter().take(5).collect::<Vec<_>>());
+                            println!(
+                                "Sample Item IDs: {:?}",
+                                item_keys.into_iter().take(5).collect::<Vec<_>>()
+                            );
                         }
                     }
                 }

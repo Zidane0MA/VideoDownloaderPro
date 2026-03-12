@@ -25,8 +25,8 @@ pub async fn init_db(app_data_dir: PathBuf) -> Result<DatabaseConnection, DbErr>
 
     // Configure connection options to reduce log verbosity
     let mut opt = ConnectOptions::new(db_url);
-    opt.max_connections(100)
-        .min_connections(5)
+    opt.max_connections(10)
+        .min_connections(2)
         .connect_timeout(Duration::from_secs(8))
         .acquire_timeout(Duration::from_secs(8))
         .idle_timeout(Duration::from_secs(8))

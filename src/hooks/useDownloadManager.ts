@@ -18,11 +18,17 @@ export function useDownloadManager() {
     setQueuePaused
   } = useDownloadStore();
 
+  const taskKeys = Object.keys(tasksRecord).join(',');
+
+  const sortedTaskIds = useMemo(() => {
+    return Object.values(tasksRecord)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .map(t => t.id);
+  }, [taskKeys]);
+
   const tasks = useMemo(() => {
-    return Object.values(tasksRecord).sort((a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-  }, [tasksRecord]);
+    return sortedTaskIds.map(id => tasksRecord[id]).filter(Boolean);
+  }, [tasksRecord, sortedTaskIds]);
 
   // Initialize: Fetch initial queue status
   useEffect(() => {

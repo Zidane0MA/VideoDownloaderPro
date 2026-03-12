@@ -43,6 +43,8 @@ pub struct AddSourceRequest {
     pub url: String,
     pub feed_types: Option<Vec<String>>,
     pub selected_ids: Option<Vec<String>>,
+    pub limit_mode: Option<String>,
+    pub max_items: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -240,6 +242,7 @@ async fn handle_ytdlp_source(
     url: &str,
     source_type: Option<&str>,
     feed_type: Option<&str>,
+    max_items: Option<u32>,
 ) -> Result<i64, String> {
     let cookie_manager = app.state::<Arc<CookieManager>>();
     let mut temp_cookie_path = None;
@@ -251,7 +254,7 @@ async fn handle_ytdlp_source(
         }
     }
 
-    let raw_output = fetcher::fetch_metadata(app, url, temp_cookie_path.as_ref())
+    let raw_output = fetcher::fetch_metadata(app, url, temp_cookie_path.as_ref(), max_items)
         .await
         .map_err(|e| e.to_string());
 
@@ -347,6 +350,7 @@ pub async fn add_source_command(
     let mut responses = Vec::new();
 
     let feed_types = request.feed_types.unwrap_or_default();
+    let max_items = if request.limit_mode.as_deref() == Some("custom") { request.max_items } else { None };
 
     // If no specific feed_types provided, act as a single source (original behavior)
     if feed_types.is_empty() {
@@ -382,7 +386,7 @@ pub async fn add_source_command(
         let saved_id_res = if let Some(section) = tiktok_section {
             handle_tiktok_source(&app, &state, &actual_url, section, source_type_arg, None).await
         } else {
-            handle_ytdlp_source(&app, &state, &actual_url, source_type_arg, None).await
+            handle_ytdlp_source(&app, &state, &actual_url, source_type_arg, None, max_items).await
         };
 
         if let Ok(saved_id) = saved_id_res {
@@ -464,7 +468,7 @@ pub async fn add_source_command(
         let saved_id_res = if let Some(section) = tiktok_section {
             handle_tiktok_source(&app, &state, &feed_url, section, source_type_arg, feed_type_arg).await
         } else {
-            handle_ytdlp_source(&app, &state, &feed_url, source_type_arg, feed_type_arg).await
+            handle_ytdlp_source(&app, &state, &feed_url, source_type_arg, feed_type_arg, max_items).await
         };
 
         match saved_id_res {

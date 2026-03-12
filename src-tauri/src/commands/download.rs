@@ -372,7 +372,7 @@ pub async fn fetch_metadata_command(
     }
 
     // Fetch raw metadata
-    let raw_output = fetcher::fetch_metadata(&app, &url, temp_cookie_path.as_ref())
+    let raw_output = fetcher::fetch_metadata(&app, &url, temp_cookie_path.as_ref(), None)
         .await
         .map_err(|e| e.to_string());
 

@@ -9,6 +9,7 @@ pub async fn fetch_metadata(
     app: &AppHandle,
     url: &str,
     cookie_path: Option<&std::path::PathBuf>,
+    max_items: Option<u32>,
 ) -> Result<YtDlpOutput, MetadataError> {
     let sidecar = SidecarBinary::YtDlp;
     let binary_path =
@@ -33,6 +34,10 @@ pub async fn fetch_metadata(
         .arg("--no-warnings")
         .arg("--js-runtimes")
         .arg(deno_arg);
+
+    if let Some(limit) = max_items {
+        cmd.arg("--playlist-items").arg(format!("1-{}", limit));
+    }
 
     if let Some(path) = cookie_path {
         cmd.arg("--cookies").arg(path);

@@ -1,3 +1,4 @@
 {
-  "rust-analyzer.server.path": "rust-analyzer"
+  "rust-analyzer.server.path": "rust-analyzer",
+  "chatgpt.openOnStartup": false
 }
