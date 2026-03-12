@@ -38,6 +38,7 @@ export const DownloadItem = React.memo(({ task }: DownloadItemProps) => {
 
   const isActive = task.status === DownloadStatus.Processing || task.status === DownloadStatus.Paused;
   const isPaused = task.status === DownloadStatus.Paused;
+  const [isImageLoaded, setIsImageLoaded] = React.useState(false);
 
   return (
     <div className="group bg-surface-800 border border-surface-700 rounded-xl p-4 transition-all hover:border-surface-600 hover:shadow-lg hover:shadow-black/20">
@@ -48,7 +49,12 @@ export const DownloadItem = React.memo(({ task }: DownloadItemProps) => {
             <img
               src={task.thumbnail}
               alt={task.title || "Video thumbnail"}
-              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+              loading="lazy"
+              decoding="async"
+              onLoad={() => setIsImageLoaded(true)}
+              className={`w-full h-full object-cover transition-all duration-700 group-hover:scale-105 ${
+                isImageLoaded ? 'opacity-100' : 'opacity-0'
+              }`}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-surface-600">
