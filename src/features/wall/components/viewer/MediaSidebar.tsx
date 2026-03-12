@@ -3,6 +3,7 @@ import type { Post, Media } from '../../../../types/wall';
 import { revealInExplorer, deletePost } from '../../api/viewer';
 import { invoke } from '@tauri-apps/api/core';
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ConfirmModal } from '../../../../components/ui/ConfirmModal';
 
 interface MediaSidebarProps {
@@ -13,6 +14,7 @@ interface MediaSidebarProps {
 }
 
 export function MediaSidebar({ post, media, onClose, isTrashMode }: MediaSidebarProps) {
+    const queryClient = useQueryClient();
     const [isDeleting, setIsDeleting] = useState(false);
     const [isRestoring, setIsRestoring] = useState(false);
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -34,6 +36,8 @@ export function MediaSidebar({ post, media, onClose, isTrashMode }: MediaSidebar
         setIsDeleting(true);
         try {
             await deletePost(post.id);
+            queryClient.invalidateQueries({ queryKey: ['posts'] });
+            queryClient.invalidateQueries({ queryKey: ['trash'] });
             onClose(); // Close viewer after deletion
         } catch (error: any) {
             console.error('Failed to delete post:', error);
@@ -45,6 +49,8 @@ export function MediaSidebar({ post, media, onClose, isTrashMode }: MediaSidebar
         setIsRestoring(true);
         try {
             await invoke('restore_post', { postId: post.id });
+            queryClient.invalidateQueries({ queryKey: ['posts'] });
+            queryClient.invalidateQueries({ queryKey: ['trash'] });
             onClose(); // Close viewer after restoring
         } catch (error) {
             console.error('Failed to restore post:', error);
