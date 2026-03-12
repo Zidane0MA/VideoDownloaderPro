@@ -13,11 +13,21 @@ pub async fn save_metadata(
     metadata: YtDlpOutput,
     source_type: Option<&str>,
     feed_type: Option<&str>,
+    platform_hint: Option<&str>,
+    source_url_hint: Option<&str>,
 ) -> Result<i64, DbErr> {
     match metadata {
         YtDlpOutput::Video(v) => save_video(db, v).await,
         YtDlpOutput::VideoFallback(v) => save_video(db, v).await,
-        YtDlpOutput::Playlist(p) => save_playlist(db, p, source_type.unwrap_or(crate::constants::source_type::PLAYLIST), feed_type).await,
+        YtDlpOutput::Playlist(p) => save_playlist(
+            db,
+            p,
+            source_type.unwrap_or(crate::constants::source_type::PLAYLIST),
+            feed_type,
+            platform_hint,
+            source_url_hint,
+        )
+        .await,
     }
 }
 
@@ -35,37 +45,67 @@ async fn save_video(db: &DatabaseConnection, v: YtDlpVideo) -> Result<i64, DbErr
     Ok(post_id)
 }
 
-async fn save_playlist(db: &DatabaseConnection, p: YtDlpPlaylist, source_type: &str, feed_type: Option<&str>) -> Result<i64, DbErr> {
+async fn save_playlist(
+    db: &DatabaseConnection,
+    p: YtDlpPlaylist,
+    source_type: &str,
+    feed_type: Option<&str>,
+    platform_hint: Option<&str>,
+    source_url_hint: Option<&str>,
+) -> Result<i64, DbErr> {
     let txn = db.begin().await?;
 
     // 1. Process Creator
-    let inferred_platform = p
-        .webpage_url
-        .as_deref()
-        .and_then(crate::platform::detect_platform)
+    let entry_platform_hint = p.entries.as_ref().and_then(|entries| {
+        entries.iter().find_map(|entry| match entry {
+            YtDlpOutput::Video(v) | YtDlpOutput::VideoFallback(v) => v
+                .webpage_url
+                .as_deref()
+                .or(v.url.as_deref()),
+            _ => None,
+        })
+    });
+
+    let inferred_platform = platform_hint
+        .or_else(|| p.webpage_url.as_deref().and_then(crate::platform::detect_platform))
+        .or_else(|| source_url_hint.and_then(crate::platform::detect_platform))
+        .or_else(|| entry_platform_hint.and_then(crate::platform::detect_platform))
         .unwrap_or("unknown")
         .to_string();
 
-    let creator_id = if let (Some(ext_id), Some(name)) = (&p.uploader_id, &p.uploader) {
-        let active_creator = creator::ActiveModel {
-            id: sea_orm::ActiveValue::NotSet,
-            platform_id: Set(inferred_platform.clone()),
-            external_id: Set(Some(ext_id.clone())),
-            is_self: Set(false),
-            name: Set(name.clone()),
-            url: Set(p.webpage_url.clone().unwrap_or_default()),
-            ..Default::default()
-        };
+    if inferred_platform == "unknown" {
+        return Err(DbErr::Custom(
+            "Unsupported or unknown platform for playlist".to_string(),
+        ));
+    }
 
-        let result = creator::Entity::insert(active_creator)
-            .on_conflict(
-                sea_orm::sea_query::OnConflict::columns([creator::Column::PlatformId, creator::Column::ExternalId])
-                    .update_columns([creator::Column::Name, creator::Column::Url])
-                    .to_owned(),
-            )
-            .exec(&txn)
+    let creator_id = if let (Some(ext_id), Some(name)) = (&p.uploader_id, &p.uploader) {
+        let existing = creator::Entity::find()
+            .filter(creator::Column::PlatformId.eq(&inferred_platform))
+            .filter(creator::Column::ExternalId.eq(ext_id))
+            .one(&txn)
             .await?;
-        Some(result.last_insert_id)
+
+        if let Some(existing_creator) = existing {
+            let mut active: creator::ActiveModel = existing_creator.into();
+            active.name = Set(name.clone());
+            active.url = Set(p.webpage_url.clone().unwrap_or_default());
+            let updated = active.update(&txn).await?;
+            Some(updated.id)
+        } else {
+            let active_creator = creator::ActiveModel {
+                id: sea_orm::ActiveValue::NotSet,
+                platform_id: Set(inferred_platform.clone()),
+                external_id: Set(Some(ext_id.clone())),
+                is_self: Set(false),
+                name: Set(name.clone()),
+                url: Set(p.webpage_url.clone().unwrap_or_default()),
+                ..Default::default()
+            };
+
+            let result = creator::Entity::insert(active_creator).exec(&txn).await?;
+            Some(result.last_insert_id)
+        }
     } else {
         None
     };
@@ -73,7 +113,11 @@ async fn save_playlist(db: &DatabaseConnection, p: YtDlpPlaylist, source_type: &
     // 2. Upsert Source (Playlist)
     let external_id = p.id.clone();
 
-    let source_url = p.webpage_url.unwrap_or_default();
+    let source_url = p
+        .webpage_url
+        .clone()
+        .or_else(|| source_url_hint.map(|s| s.to_string()))
+        .unwrap_or_default();
     let source_name = p.title;
 
     // Manual upsert: SQLite partial indexes can't be targeted by ON CONFLICT.
@@ -161,26 +205,40 @@ async fn upsert_creator(db: &impl ConnectionTrait, v: &YtDlpVideo) -> Result<i64
         .unwrap_or("unknown")
         .to_string();
 
-    let active = creator::ActiveModel {
-        id: sea_orm::ActiveValue::NotSet,
-        platform_id: Set(platform),
-        external_id: Set(external_id),
-        is_self: Set(false),
-        name: Set(name),
-        url: Set(url),
-        ..Default::default()
+    let existing = if let Some(ref ext_id) = external_id {
+        creator::Entity::find()
+            .filter(creator::Column::PlatformId.eq(&platform))
+            .filter(creator::Column::ExternalId.eq(ext_id))
+            .one(db)
+            .await?
+    } else {
+        creator::Entity::find()
+            .filter(creator::Column::PlatformId.eq(&platform))
+            .filter(creator::Column::Name.eq(&name))
+            .one(db)
+            .await?
     };
 
-    let result = creator::Entity::insert(active)
-        .on_conflict(
-            sea_orm::sea_query::OnConflict::columns([creator::Column::PlatformId, creator::Column::ExternalId])
-                .update_columns([creator::Column::Name, creator::Column::Url])
-                .to_owned(),
-        )
-        .exec(db)
-        .await?;
+    if let Some(existing_creator) = existing {
+        let mut active: creator::ActiveModel = existing_creator.into();
+        active.name = Set(name);
+        active.url = Set(url);
+        let updated = active.update(db).await?;
+        Ok(updated.id)
+    } else {
+        let active = creator::ActiveModel {
+            id: sea_orm::ActiveValue::NotSet,
+            platform_id: Set(platform),
+            external_id: Set(external_id),
+            is_self: Set(false),
+            name: Set(name),
+            url: Set(url),
+            ..Default::default()
+        };
 
-    Ok(result.last_insert_id)
+        let result = creator::Entity::insert(active).exec(db).await?;
+        Ok(result.last_insert_id)
+    }
 }
 
 async fn upsert_post(
@@ -194,41 +252,45 @@ async fn upsert_post(
     // Serialize full JSON for raw storage
     let raw_json = serde_json::to_string(v).ok();
 
-    let active = post::ActiveModel {
-        id: sea_orm::ActiveValue::NotSet,
-        creator_id: Set(creator_id),
-        source_id: Set(source_id),
-        external_id: Set(external_id.clone()),
-        title: Set(Some(v.title.clone())),
-        description: Set(v.description.clone()),
-        original_url: Set(v
-            .webpage_url
-            .clone()
-            .or_else(|| v.url.clone())
-            .or_else(|| v.original_url.clone())
-            .unwrap_or_default()),
-        status: Set("PENDING".to_string()),
-        posted_at: Set(parse_date(&v.upload_date)),
-        raw_json: Set(raw_json),
-        ..Default::default()
-    };
+    let original_url = v
+        .webpage_url
+        .clone()
+        .or_else(|| v.url.clone())
+        .or_else(|| v.original_url.clone())
+        .unwrap_or_default();
 
-    let result = post::Entity::insert(active)
-        .on_conflict(
-            sea_orm::sea_query::OnConflict::column(post::Column::ExternalId)
-                .update_columns([
-                    post::Column::Title,
-                    post::Column::Description,
-                    post::Column::RawJson,
-                    post::Column::SourceId,
-                    post::Column::OriginalUrl, // Fix stale empty URLs from flat-playlist entries
-                ])
-                .to_owned(),
-        )
-        .exec(db)
+    let existing = post::Entity::find()
+        .filter(post::Column::ExternalId.eq(&external_id))
+        .one(db)
         .await?;
 
-    Ok(result.last_insert_id)
+    if let Some(existing_post) = existing {
+        let mut active: post::ActiveModel = existing_post.into();
+        active.title = Set(Some(v.title.clone()));
+        active.description = Set(v.description.clone());
+        active.raw_json = Set(raw_json);
+        active.source_id = Set(source_id);
+        active.original_url = Set(original_url);
+        let updated = active.update(db).await?;
+        Ok(updated.id)
+    } else {
+        let active = post::ActiveModel {
+            id: sea_orm::ActiveValue::NotSet,
+            creator_id: Set(creator_id),
+            source_id: Set(source_id),
+            external_id: Set(external_id),
+            title: Set(Some(v.title.clone())),
+            description: Set(v.description.clone()),
+            original_url: Set(original_url),
+            status: Set("PENDING".to_string()),
+            posted_at: Set(parse_date(&v.upload_date)),
+            raw_json: Set(raw_json),
+            ..Default::default()
+        };
+
+        let result = post::Entity::insert(active).exec(db).await?;
+        Ok(result.last_insert_id)
+    }
 }
 
 fn parse_date(date_str: &Option<String>) -> Option<chrono::DateTime<chrono::Utc>> {

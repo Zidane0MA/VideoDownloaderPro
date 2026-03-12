@@ -38,7 +38,7 @@ mod tests {
         };
 
         let output = YtDlpOutput::Video(video);
-        let post_id = save_metadata(&db, output, None, None)
+        let post_id = save_metadata(&db, output, None, None, None, None)
             .await
             .expect("Failed to save metadata");
 
@@ -104,7 +104,7 @@ mod tests {
             entries: Some(vec![YtDlpOutput::Video(video1)]),
         };
 
-        let source_id = save_metadata(&db, YtDlpOutput::Playlist(playlist), None, None)
+        let source_id = save_metadata(&db, YtDlpOutput::Playlist(playlist), None, None, None, None)
             .await
             .expect("Failed to save playlist");
         assert_eq!(source_id, 1);

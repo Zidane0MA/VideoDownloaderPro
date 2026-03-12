@@ -220,7 +220,15 @@ async fn handle_tiktok_source(
         .await
         .map_err(|e| e.to_string())?;
 
-    let saved_id = store::save_metadata(&state.db, output, source_type, feed_type)
+    let platform_hint = crate::platform::detect_platform(url);
+    let saved_id = store::save_metadata(
+        &state.db,
+        output,
+        source_type,
+        feed_type,
+        platform_hint,
+        Some(url),
+    )
         .await
         .map_err(|e| format!("DB Error: {}", e))?;
     Ok(saved_id)
@@ -262,7 +270,14 @@ async fn handle_ytdlp_source(
         );
     }
 
-    let saved_id = store::save_metadata(&state.db, output, source_type, feed_type)
+    let saved_id = store::save_metadata(
+        &state.db,
+        output,
+        source_type,
+        feed_type,
+        platform_id,
+        Some(url),
+    )
         .await
         .map_err(|e| format!("DB Error: {}", e))?;
     Ok(saved_id)
@@ -382,21 +397,66 @@ pub async fn add_source_command(
     // MULTI-FEED SUPPORT
     for feed_type in feed_types {
         let mut feed_url = actual_url.clone();
-        let source_type_arg = Some(crate::constants::source_type::CHANNEL);
-        let feed_type_arg = Some(feed_type.as_str());
+        let mut source_type_arg = Some(crate::constants::source_type::CHANNEL);
+        let mut feed_type_arg = Some(feed_type.as_str());
 
-        // Basic URL mutator based on feed type (since frontend won't mutate for multi-select)
-        let platform_id = crate::platform::detect_platform(&feed_url).unwrap_or("");
-        
-        if platform_id == "youtube" {
-            if !feed_url.ends_with('/') {
-                feed_url.push('/');
+        // --- Intercept vdp:// pseudo-URLs for multi-feed ---
+        if feed_url.starts_with("vdp://tiktok/me/") {
+            use sea_orm::EntityTrait;
+            let session = match crate::entity::platform_session::Entity::find_by_id("tiktok")
+                .one(&state.db)
+                .await
+            {
+                Ok(Some(s)) => s,
+                _ => {
+                    tracing::warn!("TikTok session not found for multi-feed");
+                    continue;
+                }
+            };
+            if let Some(username) = session.username {
+                let section = feed_type.to_lowercase();
+                if section == "saved" {
+                    source_type_arg = Some(crate::constants::source_type::SAVED);
+                    feed_type_arg = None;
+                } else if section == "liked" {
+                    source_type_arg = Some(crate::constants::source_type::LIKED);
+                    feed_type_arg = None;
+                } else if section == "videos" {
+                    feed_type_arg = Some(crate::constants::feed_type::VIDEOS);
+                }
+                // When we do vdp://tiktok/me/ it means "current user". If feed_type is "videos", it corresponds to public profile.
+                let url_suffix = if section == "videos" || section == "default" { "" } else { &section };
+                feed_url = format!("https://www.tiktok.com/@{}/{}", username, url_suffix);
+            } else {
+                continue;
             }
-            match feed_type.as_str() {
-                crate::constants::feed_type::VIDEOS => {}, // base URL works
-                crate::constants::feed_type::SHORTS => feed_url.push_str("shorts"),
-                crate::constants::feed_type::STREAMS => feed_url.push_str("streams"),
-                _ => feed_url.push_str(&feed_type.to_lowercase()),
+        } else {
+            // Basic URL mutator based on feed type (since frontend won't mutate for multi-select)
+            let platform_id = crate::platform::detect_platform(&feed_url).unwrap_or("");
+            
+            if platform_id == "youtube" {
+                if !feed_url.ends_with('/') {
+                    feed_url.push('/');
+                }
+                match feed_type.as_str() {
+                    crate::constants::feed_type::VIDEOS => {}, // base URL works
+                    crate::constants::feed_type::SHORTS => feed_url.push_str("shorts"),
+                    crate::constants::feed_type::STREAMS => feed_url.push_str("streams"),
+                    _ => feed_url.push_str(&feed_type.to_lowercase()),
+                }
+            } else if platform_id == "tiktok" {
+                let section = feed_type.to_lowercase();
+                if section == "saved" {
+                    source_type_arg = Some(crate::constants::source_type::SAVED);
+                    feed_type_arg = None;
+                    if !feed_url.ends_with('/') { feed_url.push('/'); }
+                    feed_url.push_str("saved");
+                } else if section == "liked" {
+                    source_type_arg = Some(crate::constants::source_type::LIKED);
+                    feed_type_arg = None;
+                    if !feed_url.ends_with('/') { feed_url.push('/'); }
+                    feed_url.push_str("liked");
+                }
             }
         }
 

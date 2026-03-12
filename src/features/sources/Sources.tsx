@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { 
-    ListVideo, Trash2, RefreshCw, Plus, X, Loader2, ToggleLeft, ToggleRight,
+    ListVideo, Trash2, RefreshCw, Plus, X, ToggleLeft, ToggleRight,
     PlaySquare, Smartphone, Radio, Bookmark, Heart, Box, User, Folder, Layers
 } from 'lucide-react';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
-import { QUICK_ACTIONS } from './config/quickActions';
+import { AddSourceModal } from './components/AddSourceModal';
 
 export interface SourceResponse {
     id: number;
@@ -68,9 +68,7 @@ export const Sources: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const [showAddInput, setShowAddInput] = useState(false);
-    const [addUrl, setAddUrl] = useState('');
-    const [isAdding, setIsAdding] = useState(false);
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
     // Confirm Modal state
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -128,43 +126,6 @@ export const Sources: React.FC = () => {
             console.error(err);
             setError(String(err) || 'Failed to update source');
         }
-    };
-
-    const handleAddSource = async () => {
-        if (!addUrl.trim()) return;
-        setIsAdding(true);
-        setError(null);
-        try {
-            const results = await invoke<{ source_id: number; items_queued: number }[]>('add_source_command', {
-                request: {
-                    url: addUrl.trim(),
-                    feed_types: null,
-                    selected_ids: null
-                }
-            });
-            setAddUrl('');
-            setShowAddInput(false);
-            fetchSources();
-            // Brief success feedback in console
-            const totalQueued = results.reduce((acc, curr) => acc + curr.items_queued, 0);
-            console.info(`${results.length} sources added, ${totalQueued} items queued`);
-        } catch (err) {
-            console.error(err);
-            setError(String(err) || 'Failed to add source');
-        } finally {
-            setIsAdding(false);
-        }
-    };
-
-    const handleQuickAction = (presetUrl: string) => {
-        setAddUrl(presetUrl);
-        if (!showAddInput) {
-            setShowAddInput(true);
-        }
-        setTimeout(() => {
-            const input = document.getElementById('source-url-input');
-            if (input) input.focus();
-        }, 50);
     };
 
     const { myAccounts, channels, standalone } = React.useMemo(() => {
@@ -371,11 +332,11 @@ export const Sources: React.FC = () => {
                 </h2>
                 <div className="flex items-center gap-2">
                     <button
-                        onClick={() => setShowAddInput(!showAddInput)}
+                        onClick={() => setIsAddModalOpen(true)}
                         className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-brand-600 hover:bg-brand-500 rounded-lg transition-colors shadow-md shadow-brand-600/20"
                     >
-                        {showAddInput ? <X size={14} /> : <Plus size={14} />}
-                        {showAddInput ? 'Cancel' : 'Add Source'}
+                        <Plus size={14} />
+                        Add Source
                     </button>
                     <button
                         onClick={fetchSources}
@@ -387,66 +348,6 @@ export const Sources: React.FC = () => {
                 </div>
             </div>
 
-            {/* Add Source Input */}
-            {showAddInput && (
-                <div className="animate-in slide-in-from-top-2 fade-in duration-200 p-5 bg-surface-800 border border-surface-700 rounded-xl shadow-lg shadow-surface-900/50">
-                    {/* Quick Actions */}
-                    <div className="mb-5">
-                        <label className="block text-xs font-semibold text-brand-400 mb-3 uppercase tracking-wider">
-                            Personal & Quick Actions
-                        </label>
-                        <div className="flex flex-wrap gap-2.5">
-                            {QUICK_ACTIONS.map(action => (
-                                <button
-                                    key={action.id}
-                                    onClick={() => handleQuickAction(action.actionUrl)}
-                                    className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-surface-200 bg-surface-900 border border-surface-700 hover:border-surface-500 hover:bg-surface-700 hover:text-white rounded-lg transition-all shadow-sm"
-                                >
-                                    <action.icon size={16} className={action.iconColorClass} />
-                                    {action.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <label htmlFor="source-url-input" className="block text-sm font-medium text-surface-400 mb-2">
-                        Playlist, Channel or Profile URL
-                    </label>
-                    <div className="flex gap-2">
-                        <input
-                            id="source-url-input"
-                            type="text"
-                            value={addUrl}
-                            onChange={(e) => setAddUrl(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && addUrl.trim() && !isAdding) handleAddSource();
-                            }}
-                            disabled={isAdding}
-                            placeholder="https://youtube.com/playlist?list=..."
-                            className="flex-1 bg-surface-900 border border-surface-700 rounded-lg px-4 py-2.5 text-surface-100 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
-                            autoFocus
-                        />
-                        <button
-                            onClick={handleAddSource}
-                            disabled={!addUrl.trim() || isAdding}
-                            className="flex items-center gap-2 px-6 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-brand-600/20"
-                        >
-                            {isAdding ? (
-                                <>
-                                    <Loader2 size={18} className="animate-spin" />
-                                    <span>Adding...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <Plus size={18} />
-                                    <span>Add</span>
-                                </>
-                            )}
-                        </button>
-                    </div>
-                </div>
-            )}
-
             {error && (
                 <div className="text-red-500 text-sm bg-red-500/10 border border-red-500/20 px-4 py-3 rounded-lg break-words flex items-center gap-2">
                     <X size={16} onClick={() => setError(null)} className="cursor-pointer flex-shrink-0" />
@@ -454,14 +355,14 @@ export const Sources: React.FC = () => {
                 </div>
             )}
 
-            {sources.length === 0 && !showAddInput ? (
+            {sources.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-surface-400 space-y-4">
                     <div className="p-5 bg-surface-800 rounded-full border border-surface-700">
                         <Layers size={36} />
                     </div>
                     <p className="text-surface-300">No sources added yet.</p>
                     <button
-                        onClick={() => setShowAddInput(true)}
+                        onClick={() => setIsAddModalOpen(true)}
                         className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors shadow-md shadow-brand-600/20"
                     >
                         <Plus size={18} />
@@ -522,6 +423,12 @@ export const Sources: React.FC = () => {
                 }}
                 confirmText="Delete"
                 isDanger={true}
+            />
+
+            <AddSourceModal 
+                isOpen={isAddModalOpen} 
+                onClose={() => setIsAddModalOpen(false)} 
+                onSuccess={fetchSources}
             />
         </div>
     );
